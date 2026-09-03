@@ -39,3 +39,30 @@ func TestConvertRequestStripsUnsupportedCompatibilityParams(t *testing.T) {
 		}
 	}
 }
+
+func TestKnownCodexModelsReturnsLatestCatalogueCopy(t *testing.T) {
+	models := KnownCodexModels()
+	if len(models) == 0 {
+		t.Fatal("Codex model catalogue is empty")
+	}
+	if models[0] != "gpt-5.6" {
+		t.Fatalf("latest Codex model should be first, got %q", models[0])
+	}
+	if !containsModel(models, "gpt-5.3-codex") {
+		t.Fatalf("Codex catalogue is missing gpt-5.3-codex: %v", models)
+	}
+
+	models[0] = "changed"
+	if KnownCodexModels()[0] == "changed" {
+		t.Fatal("KnownCodexModels returned the shared backing slice")
+	}
+}
+
+func containsModel(models []string, target string) bool {
+	for _, model := range models {
+		if model == target {
+			return true
+		}
+	}
+	return false
+}

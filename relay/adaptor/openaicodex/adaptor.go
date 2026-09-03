@@ -27,11 +27,33 @@ import (
 
 const defaultCodexInstructions = "You are Codex, a coding assistant."
 
+// fallbackCodexModels is used when the ChatGPT Codex OAuth endpoint does not
+// expose a model catalogue. Keep the aliases and versioned IDs here because
+// OAuth Codex is not a normal OpenAI API-key endpoint and /models is not
+// guaranteed to be available.
 var fallbackCodexModels = []string{
+	"gpt-5.6",
+	"gpt-5.6-sol",
+	"gpt-5.6-terra",
+	"gpt-5.6-luna",
 	"gpt-5.5",
 	"gpt-5.4",
 	"gpt-5.4-mini",
 	"gpt-5.4-nano",
+	"gpt-5.3-codex",
+	"gpt-5.2-codex",
+	"gpt-5.1-codex-max",
+	"gpt-5.1-codex-mini",
+	"gpt-5-codex",
+	"codex-mini-latest",
+}
+
+// KnownCodexModels returns a copy so callers cannot mutate the adaptor's
+// shared catalogue.
+func KnownCodexModels() []string {
+	models := make([]string, len(fallbackCodexModels))
+	copy(models, fallbackCodexModels)
+	return models
 }
 
 type Adaptor struct{}
@@ -247,9 +269,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 }
 
 func (a *Adaptor) GetModelList() []string {
-	models := make([]string, len(fallbackCodexModels))
-	copy(models, fallbackCodexModels)
-	return models
+	return KnownCodexModels()
 }
 
 func (a *Adaptor) GetChannelName() string {

@@ -190,7 +190,11 @@
             <a-button v-if="form.type === 20 || form.type === 52" :loading="refreshingModels" @click="refreshChannelModels">
               刷新模型
             </a-button>
+            <a-button :loading="validatingModels" @click="validateChannelModels">
+              校验模型
+            </a-button>
           </a-space>
+          <div class="form-hint">可枚举的 Provider 会自动移除不存在的模型；不支持模型目录的 Provider 只能标记为待验证。</div>
         </a-form-item>
         <a-form-item field="groups" label="分组">
           <a-input v-model="form.groups" placeholder="多个分组用逗号分隔" allow-clear />
@@ -226,6 +230,23 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconPlus, IconApps, IconSwap } from '@arco-design/web-vue/es/icon'
 import api from '@/api'
+
+const defaultOpenAICodexModels = [
+  'gpt-5.6',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'gpt-5.4-nano',
+  'gpt-5.3-codex',
+  'gpt-5.2-codex',
+  'gpt-5.1-codex-max',
+  'gpt-5.1-codex-mini',
+  'gpt-5-codex',
+  'codex-mini-latest',
+]
 
 // 渠道类型映射（对应后端 relay/registry 的 LegacyType）
 const typeNameMap = {
@@ -295,6 +316,7 @@ const testingIds = ref([])
 const oauthLoading = ref(false)
 const oauthFlow = ref(null)
 const refreshingModels = ref(false)
+const validatingModels = ref(false)
 
 const formRef = ref(null)
 const form = reactive({
@@ -472,11 +494,57 @@ async function refreshChannelModels() {
     })
     if (!data.success) throw new Error(data.message || '模型刷新失败')
     form.models = (data.data?.models || []).join(',')
-    Message.success(`已刷新 ${data.data?.models?.length || 0} 个模型`)
+    const count = data.data?.models?.length || 0
+    if (data.data?.source_url === 'builtin://openaicodex') {
+      Message.success(`已加载内置 Codex 模型目录（${count} 个候选模型）`)
+    } else {
+      Message.success(`已刷新 ${count} 个模型`)
+    }
   } catch (e) {
     Message.error(e.response?.data?.message || e.message || '模型刷新失败')
   } finally {
     refreshingModels.value = false
+  }
+}
+
+async function validateChannelModels() {
+  const models = form.models
+    .split(',')
+    .map((model) => model.trim())
+    .filter(Boolean)
+  if (!models.length) {
+    Message.warning('请先填写至少一个模型名')
+    return
+  }
+
+  validatingModels.value = true
+  try {
+    const { data } = await api.post('/api/channel/models/validate', {
+      id: editingId.value || 0,
+      type: form.type,
+      key: form.key,
+      base_url: form.base_url,
+      models: models.join(','),
+    })
+    if (!data.success) throw new Error(data.message || '模型校验失败')
+
+    const result = data.data || {}
+    if (result.verification_enabled) {
+      const validModels = result.valid_models || []
+      const invalidModels = result.invalid_models || []
+      form.models = validModels.join(',')
+      if (invalidModels.length) {
+        Message.warning(`已移除 ${invalidModels.length} 个不可用模型：${invalidModels.join(', ')}`)
+      } else {
+        Message.success(`模型校验通过，共 ${validModels.length} 个`)
+      }
+    } else {
+      Message.warning(data.message || '上游未提供模型目录，当前模型仅作为候选项保留')
+    }
+  } catch (e) {
+    Message.error(e.response?.data?.message || e.message || '模型校验失败')
+  } finally {
+    validatingModels.value = false
   }
 }
 
@@ -498,7 +566,7 @@ async function startOpenAIOAuth() {
       oauthFlow.value = flow
       if (flow.status === 'success') {
         form.key = flow.credential || ''
-        if (!form.models) form.models = 'gpt-5.5,gpt-5.4,gpt-5.4-mini,gpt-5.4-nano'
+        if (!form.models) form.models = defaultOpenAICodexModels.join(',')
         Message.success('OpenAI OAuth 登录成功，请保存渠道')
         return
       }

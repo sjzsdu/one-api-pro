@@ -168,6 +168,28 @@ func CacheGetGroupModels(ctx context.Context, group string) ([]string, error) {
 	return models, nil
 }
 
+// InvalidateGroupModelsCache clears the derived model list after channel or
+// ability changes so the token editor does not show stale models.
+func InvalidateGroupModelsCache(groups ...string) {
+	if !common.RedisEnabled || common.RDB == nil {
+		return
+	}
+	seen := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		if _, ok := seen[group]; ok {
+			continue
+		}
+		seen[group] = struct{}{}
+		if err := common.RedisDel(fmt.Sprintf("group_models:%s", group)); err != nil {
+			logger.SysError(fmt.Sprintf("failed to invalidate group model cache for %s: %s", group, err.Error()))
+		}
+	}
+}
+
 var group2model2channels map[string]map[string][]*Channel
 var channelSyncLock sync.RWMutex
 var channelId2channel map[int]*Channel
