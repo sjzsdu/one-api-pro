@@ -61,8 +61,6 @@ type ChannelConfig struct {
 	VertexAIADC       string `json:"vertex_ai_adc,omitempty"`
 }
 
-
-
 func GetAllChannels(startIdx int, num int, scope string) ([]*Channel, error) {
 	var channels []*Channel
 	var err error
@@ -277,6 +275,13 @@ func (channel *Channel) LoadConfig() (ChannelConfig, error) {
 		return cfg, err
 	}
 	return cfg, nil
+}
+
+// UpdateChannelKeyById updates a channel credential without exposing it through
+// the normal channel update payload. OAuth refresh uses this to persist the
+// rotated refresh/access token pair.
+func UpdateChannelKeyById(id int, key string) error {
+	return DB.Model(&Channel{}).Where("id = ?", id).Update("key", key).Error
 }
 
 func (channel *Channel) GetMaxConcurrency() int {

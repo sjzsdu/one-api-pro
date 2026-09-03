@@ -29,8 +29,8 @@ import (
 	"github.com/modelbus/one-api-pro/relay/adaptor/openai"
 	"github.com/modelbus/one-api-pro/relay/handler"
 	"github.com/modelbus/one-api-pro/relay/meta"
-	relaymodel "github.com/modelbus/one-api-pro/relay/schema"
 	"github.com/modelbus/one-api-pro/relay/relaymode"
+	relaymodel "github.com/modelbus/one-api-pro/relay/schema"
 )
 
 func buildTestRequest(model string) *relaymodel.GeneralOpenAIRequest {
@@ -39,6 +39,7 @@ func buildTestRequest(model string) *relaymodel.GeneralOpenAIRequest {
 	}
 	testRequest := &relaymodel.GeneralOpenAIRequest{
 		Model: model,
+		Input: config.TestPrompt,
 	}
 	testMessage := relaymodel.Message{
 		Role:    "user",
@@ -46,6 +47,15 @@ func buildTestRequest(model string) *relaymodel.GeneralOpenAIRequest {
 	}
 	testRequest.Messages = append(testRequest.Messages, testMessage)
 	return testRequest
+}
+
+func isEmbeddingTestModel(modelName string) bool {
+	modelName = strings.ToLower(modelName)
+	return strings.Contains(modelName, "embedding") ||
+		strings.Contains(modelName, "bge-") ||
+		strings.Contains(modelName, "/bge") ||
+		strings.Contains(modelName, "gte-") ||
+		strings.Contains(modelName, "bce-embedding")
 }
 
 func parseTestResponse(resp string) (*openai.TextResponse, string, error) {
@@ -64,13 +74,41 @@ func parseTestResponse(resp string) (*openai.TextResponse, string, error) {
 	return &response, stringContent, nil
 }
 
+func parseEmbeddingTestResponse(resp string) (string, error) {
+	var response openai.EmbeddingResponse
+	if err := json.Unmarshal([]byte(resp), &response); err != nil {
+		return "", err
+	}
+	if len(response.Data) == 0 || len(response.Data[0].Embedding) == 0 {
+		return "", errors.New("embedding response has no vector data")
+	}
+	return fmt.Sprintf("embedding ok, dimensions: %d", len(response.Data[0].Embedding)), nil
+}
+
 func testChannel(ctx context.Context, channel *model.Channel, request *relaymodel.GeneralOpenAIRequest) (responseMessage string, err error, openaiErr *relaymodel.Error) {
 	startTime := time.Now()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	modelName := request.Model
+	modelMap := channel.GetModelMapping()
+	if modelName == "" || !channel.ContainsModel(modelName) {
+		modelNames := strings.Split(channel.Models, ",")
+		if len(modelNames) > 0 {
+			modelName = strings.TrimSpace(modelNames[0])
+		}
+	}
+	if modelMap != nil && modelMap[modelName] != "" {
+		modelName = modelMap[modelName]
+	}
+	relayMode := relaymode.ChatCompletions
+	requestPath := "/v1/chat/completions"
+	if isEmbeddingTestModel(modelName) {
+		relayMode = relaymode.Embeddings
+		requestPath = "/v1/embeddings"
+	}
 	c.Request = &http.Request{
 		Method: "POST",
-		URL:    &url.URL{Path: "/v1/chat/completions"},
+		URL:    &url.URL{Path: requestPath},
 		Body:   nil,
 		Header: make(http.Header),
 	}
@@ -87,20 +125,9 @@ func testChannel(ctx context.Context, channel *model.Channel, request *relaymode
 		return "", fmt.Errorf("invalid channel type: %d, adaptor is nil", channel.Type), nil
 	}
 	adaptor.Init(meta)
-	modelName := request.Model
-	modelMap := channel.GetModelMapping()
-	if modelName == "" || !strings.Contains(channel.Models, modelName) {
-		modelNames := strings.Split(channel.Models, ",")
-		if len(modelNames) > 0 {
-			modelName = modelNames[0]
-		}
-	}
-	if modelMap != nil && modelMap[modelName] != "" {
-		modelName = modelMap[modelName]
-	}
 	meta.OriginModelName, meta.ActualModelName = request.Model, modelName
 	request.Model = modelName
-	convertedRequest, err := adaptor.ConvertRequest(c, relaymode.ChatCompletions, request)
+	convertedRequest, err := adaptor.ConvertRequest(c, relayMode, request)
 	if err != nil {
 		return "", err, nil
 	}
@@ -149,9 +176,13 @@ func testChannel(ctx context.Context, channel *model.Channel, request *relaymode
 		return "", errors.New("usage is nil"), nil
 	}
 	rawResponse := w.Body.String()
-	_, responseMessage, err = parseTestResponse(rawResponse)
+	if relayMode == relaymode.Embeddings {
+		responseMessage, err = parseEmbeddingTestResponse(rawResponse)
+	} else {
+		_, responseMessage, err = parseTestResponse(rawResponse)
+	}
 	if err != nil {
-		logger.SysError(fmt.Sprintf("failed to parse error: %s, \nresponse: %s", err.Error(), rawResponse))
+		logger.SysError(fmt.Sprintf("failed to parse test response: %s, \nresponse: %s", err.Error(), rawResponse))
 		return "", err, nil
 	}
 	result := w.Result()

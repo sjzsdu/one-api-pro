@@ -7,12 +7,8 @@ type Adaptor struct {
 }
 
 var ModelList = []string{
-	"lite",
-	"generalv3",
-	"pro-128k",
-	"generalv3.5",
-	"max-32k",
-	"4.0Ultra",
+	"lite", "generalv3", "pro-128k", "generalv3.5", "max-32k", "4.0Ultra",
+	"x1", "x1-32k", "embedding",
 }
 
 func (a *Adaptor) GetModelList() []string  { return ModelList }
