@@ -184,10 +184,14 @@
           <a-input v-model="form.name" placeholder="例如：生产环境、测试脚本" :max-length="50" allow-clear />
         </a-form-item>
 
-        <a-form-item field="models" label="可用模型" extra="留空表示不限制，所有模型均可调用">
+        <a-form-item
+          field="models"
+          label="可用模型"
+          :extra="availableModels.length ? '留空表示不限制当前分组模型' : '当前分组暂无已启用模型，请先配置渠道'"
+        >
           <a-select
             v-model="form.models"
-            placeholder="选择可用模型"
+            :placeholder="availableModels.length ? '选择可用模型' : '当前分组暂无模型'"
             multiple
             allow-clear
             allow-search

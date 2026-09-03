@@ -257,11 +257,18 @@ func (channel *Channel) UpdateBalance(balance float64) {
 
 func (channel *Channel) Delete() error {
 	var err error
+	var groups []string
+	if err = DB.Model(&Ability{}).Where("channel_id = ?", channel.Id).Distinct("group").Pluck("group", &groups).Error; err != nil {
+		return err
+	}
 	err = DB.Delete(channel).Error
 	if err != nil {
 		return err
 	}
 	err = channel.DeleteAbilities()
+	if err == nil {
+		InvalidateGroupModelsCache(groups...)
+	}
 	return err
 }
 

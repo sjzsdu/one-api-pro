@@ -8,7 +8,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/modelbus/one-api-pro/common"
-	"github.com/modelbus/one-api-pro/common/utils"
 )
 
 type Ability struct {
@@ -53,10 +52,9 @@ func GetRandomSatisfiedChannel(group string, model string, ignoreFirstPriority b
 }
 
 func (channel *Channel) AddAbilities() error {
-	models_ := strings.Split(channel.Models, ",")
-	models_ = utils.DeDuplication(models_)
-	groups_ := strings.Split(channel.Group, ",")
-	abilities := make([]Ability, 0, len(models_))
+	models_ := uniqueTrimmedValues(strings.Split(channel.Models, ","))
+	groups_ := uniqueTrimmedValues(strings.Split(channel.Group, ","))
+	abilities := make([]Ability, 0, len(models_)*len(groups_))
 	for _, model := range models_ {
 		for _, group := range groups_ {
 			ability := Ability{
@@ -69,7 +67,30 @@ func (channel *Channel) AddAbilities() error {
 			abilities = append(abilities, ability)
 		}
 	}
-	return DB.Create(&abilities).Error
+	if len(abilities) > 0 {
+		if err := DB.Create(&abilities).Error; err != nil {
+			return err
+		}
+	}
+	InvalidateGroupModelsCache(groups_...)
+	return nil
+}
+
+func uniqueTrimmedValues(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func (channel *Channel) DeleteAbilities() error {
@@ -93,6 +114,10 @@ func (channel *Channel) DeleteAbilities() error {
 // UpdateAbilities updates abilities of this channel.
 // Make sure the channel is completed before calling this function.
 func (channel *Channel) UpdateAbilities() error {
+	var oldGroups []string
+	if err := DB.Model(&Ability{}).Where("channel_id = ?", channel.Id).Distinct("group").Pluck("group", &oldGroups).Error; err != nil {
+		return err
+	}
 	// A quick and dirty way to update abilities
 	// First delete all abilities of this channel
 	err := channel.DeleteAbilities()
@@ -104,6 +129,7 @@ func (channel *Channel) UpdateAbilities() error {
 	if err != nil {
 		return err
 	}
+	InvalidateGroupModelsCache(append(oldGroups, strings.Split(channel.Group, ",")...)...)
 	return nil
 }
 

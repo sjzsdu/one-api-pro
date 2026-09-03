@@ -14,6 +14,7 @@ import (
 	"github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/common/openaioauth"
 	"github.com/modelbus/one-api-pro/model"
+	"github.com/modelbus/one-api-pro/relay/adaptor/openaicodex"
 	"github.com/modelbus/one-api-pro/relay/channeltype"
 	"github.com/modelbus/one-api-pro/relay/registry"
 	"net/http"
@@ -26,6 +27,14 @@ type refreshChannelModelsRequest struct {
 	Type    int    `json:"type"`
 	Key     string `json:"key"`
 	BaseURL string `json:"base_url"`
+}
+
+type validateChannelModelsRequest struct {
+	Id      int    `json:"id"`
+	Type    int    `json:"type"`
+	Key     string `json:"key"`
+	BaseURL string `json:"base_url"`
+	Models  string `json:"models"`
 }
 
 type upstreamModelsResponse struct {
@@ -41,7 +50,10 @@ type upstreamModel struct {
 	Slug  string `json:"slug"`
 }
 
-const codexModelListUnavailableMessage = "无法自动获取 Codex OAuth 模型列表：上游未提供可枚举的模型目录。请在模型框中直接输入模型名并回车添加。"
+const (
+	codexModelListUnavailableMessage = "无法自动获取 Codex OAuth 模型列表：上游未提供可枚举的模型目录。请在模型框中直接输入模型名并回车添加。"
+	codexBuiltinModelListSource      = "builtin://openaicodex"
+)
 
 var openRouterModelCache = struct {
 	sync.RWMutex
@@ -145,13 +157,23 @@ func parseUpstreamModels(resp *http.Response) ([]string, string, error) {
 }
 
 func requestUpstreamModels(url, key string) ([]string, string, error) {
+	headers := http.Header{}
+	if key != "" {
+		headers.Set("Authorization", "Bearer "+key)
+	}
+	return requestUpstreamModelsWithHeaders(url, headers)
+}
+
+func requestUpstreamModelsWithHeaders(url string, headers http.Header) ([]string, string, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, "", err
 	}
 	req.Header.Set("Accept", "application/json")
-	if key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
+	for key, values := range headers {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
 	}
 	httpClient := client.ImpatientHTTPClient
 	if httpClient == nil {
@@ -228,13 +250,139 @@ func refreshOpenAICodexModels(channelID int, baseURL, key string) ([]string, str
 			}
 		}
 	}
+	headers := http.Header{
+		"Authorization": []string{"Bearer " + cred.AccessToken},
+		"originator":    []string{"codex_cli_rs"},
+		"OpenAI-Beta":   []string{"responses=experimental"},
+	}
+	if cred.AccountID != "" {
+		headers.Set("Chatgpt-Account-Id", cred.AccountID)
+	}
 	for _, url := range uniqueURLs(strings.TrimRight(baseURL, "/")+"/models", strings.TrimRight(baseURL, "/")+"/v1/models") {
-		models, _, requestErr := requestUpstreamModels(url, cred.AccessToken)
+		models, _, requestErr := requestUpstreamModelsWithHeaders(url, headers)
 		if requestErr == nil && len(models) > 0 {
 			return models, url, nil
 		}
 	}
+
+	// The private OAuth endpoint normally has no enumerable /models resource.
+	// Returning the same catalogue used by the adaptor makes the UI refresh
+	// action useful while keeping manual model entry available for new rollouts.
+	if models := openaicodex.KnownCodexModels(); len(models) > 0 {
+		return models, codexBuiltinModelListSource, nil
+	}
 	return nil, "", fmt.Errorf("%s", codexModelListUnavailableMessage)
+}
+
+func ValidateChannelModels(c *gin.Context) {
+	req := validateChannelModelsRequest{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	if req.Id > 0 {
+		channel, err := model.GetChannelById(req.Id, true)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		if req.Type == 0 {
+			req.Type = channel.Type
+		}
+		if req.Key == "" {
+			req.Key = channel.Key
+		}
+		if req.BaseURL == "" {
+			req.BaseURL = channel.GetBaseURL()
+		}
+	}
+
+	models := normalizeModelNames(strings.Split(req.Models, ","))
+	if len(models) == 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先填写至少一个模型名"})
+		return
+	}
+	if req.Type == 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先选择渠道类型"})
+		return
+	}
+
+	baseURL := resolveChannelBaseURL(req.Type, req.BaseURL)
+	var listed []string
+	var source string
+	var err error
+	verificationEnabled := true
+	switch req.Type {
+	case channeltype.OpenRouter:
+		listed, source, err = getOpenRouterModelList(baseURL, req.Key, true)
+	case channeltype.OpenAICodexOAuth:
+		// Codex OAuth does not expose a reliable model catalogue. Its bundled
+		// list is useful as a candidate set, but cannot prove account access.
+		listed = openaicodex.KnownCodexModels()
+		source = codexBuiltinModelListSource
+		verificationEnabled = false
+	default:
+		for _, url := range uniqueURLs(baseURL+"/models", baseURL+"/v1/models") {
+			listed, _, err = requestUpstreamModels(url, req.Key)
+			if err == nil && len(listed) > 0 {
+				source = url
+				break
+			}
+		}
+		if len(listed) == 0 {
+			// A missing or unsupported catalogue is not proof that the model is
+			// invalid. Keep manual entry possible and report it as unverified.
+			err = nil
+		}
+	}
+
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	if len(listed) == 0 || !verificationEnabled {
+		// A provider that cannot enumerate models must keep manual model entry
+		// possible. Report those models as unverified instead of silently
+		// claiming that they are available.
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "上游未提供模型目录，模型暂无法自动验证",
+			"data": gin.H{
+				"valid_models":         []string{},
+				"invalid_models":       []string{},
+				"unverified_models":    models,
+				"verification_enabled": false,
+				"source_url":           source,
+			},
+		})
+		return
+	}
+
+	listedSet := make(map[string]struct{}, len(listed))
+	for _, name := range listed {
+		listedSet[name] = struct{}{}
+	}
+	valid := make([]string, 0, len(models))
+	invalid := make([]string, 0)
+	for _, name := range models {
+		if _, ok := listedSet[name]; ok {
+			valid = append(valid, name)
+		} else {
+			invalid = append(invalid, name)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "模型验证完成",
+		"data": gin.H{
+			"valid_models":         valid,
+			"invalid_models":       invalid,
+			"unverified_models":    []string{},
+			"verification_enabled": true,
+			"source_url":           source,
+		},
+	})
 }
 
 func GetAllChannels(c *gin.Context) {
