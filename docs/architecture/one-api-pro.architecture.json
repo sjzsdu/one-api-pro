@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "one-api-pro 总体架构",
+    "output": "docs/architecture/one-api-pro.architecture.html",
+    "visual_preset": "blueprint",
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/modelbus/one-api-pro.git",
+      "revision": "3e11e31a6fb07c0ccdcd7d25c8ed07b079e71a18"
+    },
+    "views": [
+      { "id": "request-path", "label": "请求主链路", "focus": ["client", "web", "api", "auth", "router", "relay", "adaptor", "upstream"], "note": "从兼容 API 入口跟踪到上游模型服务。" },
+      { "id": "state-and-billing", "label": "状态与计费", "focus": ["router", "relay", "billing", "db", "cache"], "note": "观察渠道选择、配额预扣与持久化状态。" },
+      { "id": "oauth-extension", "label": "OAuth 扩展", "focus": ["web", "api", "auth", "db", "upstream"], "note": "查看管理员如何为 OpenAI Codex 渠道建立凭证。" }
+    ]
+  },
+  "components": [
+    { "id": "client", "type": "external", "label": "兼容客户端", "sublabel": "OpenAI API / SDK", "pos": [40, 300], "size": [140, 64], "sources": [{ "path": "router/relay.go", "line": 20, "label": "兼容入口" }] },
+    { "id": "web", "type": "frontend", "label": "管理前端", "sublabel": "Vue 3 + Arco", "pos": [40, 90], "size": [140, 64], "sources": [{ "path": "web/default-pro/src/views/channel/Channel.vue", "line": 1, "label": "渠道管理" }] },
+    { "id": "api", "type": "backend", "label": "Gin API 层", "sublabel": "/api 与 /v1 路由", "pos": [270, 220], "size": [150, 64], "sources": [{ "path": "router/api.go", "line": 10, "label": "API 路由" }, { "path": "router/relay.go", "line": 20, "label": "Relay 路由" }] },
+    { "id": "auth", "type": "security", "label": "认证与权限", "sublabel": "User / Admin / Root", "pos": [490, 90], "size": [150, 64], "sources": [{ "path": "middleware/auth.go", "line": 1, "label": "认证中间件" }] },
+    { "id": "router", "type": "backend", "label": "渠道路由器", "sublabel": "分组、优先级、并发", "pos": [490, 300], "size": [150, 64], "sources": [{ "path": "middleware/distributor.go", "line": 20, "label": "渠道分发" }, { "path": "channelrouter/router.go", "line": 1, "label": "路由策略" }] },
+    { "id": "relay", "type": "backend", "label": "Relay 控制器", "sublabel": "重试与故障转移", "pos": [710, 300], "size": [150, 64], "sources": [{ "path": "controller/relay.go", "line": 59, "label": "Relay" }, { "path": "relay/handler/text.go", "line": 24, "label": "文本处理" }] },
+    { "id": "billing", "type": "backend", "label": "计费与配额", "sublabel": "预扣 / 返还 / 后扣", "pos": [710, 90], "size": [150, 64], "sources": [{ "path": "relay/handler/helper.go", "line": 66, "label": "配额结算" }, { "path": "relay/billing/billing.go", "line": 40, "label": "计费" }] },
+    { "id": "adaptor", "type": "backend", "label": "Adaptor 注册表", "sublabel": "统一协议适配", "pos": [930, 300], "size": [150, 64], "sources": [{ "path": "relay/adaptor.go", "line": 1, "label": "Adaptor 注册" }, { "path": "relay/adaptor/interface.go", "line": 11, "label": "Adaptor 接口" }] },
+    { "id": "db", "type": "database", "label": "关系数据库", "sublabel": "GORM：用户、渠道、日志", "pos": [930, 90], "size": [150, 64], "sources": [{ "path": "model/main.go", "line": 1, "label": "数据库初始化" }, { "path": "model/channel.go", "line": 17, "label": "渠道模型" }] },
+    { "id": "cache", "type": "database", "label": "进程缓存", "sublabel": "分组、模型、会话", "pos": [490, 500], "size": [150, 64], "sources": [{ "path": "model/cache.go", "line": 1, "label": "缓存" }, { "path": "channelrouter/router.go", "line": 1, "label": "粘性会话" }] },
+    { "id": "upstream", "type": "external", "label": "上游模型服务", "sublabel": "OpenAI / OpenRouter / 国内厂商", "pos": [1150, 300], "size": [170, 64], "sources": [{ "path": "relay/adaptor/openaicodex/adaptor.go", "line": 168, "label": "Codex 上游" }] },
+    { "id": "oauth", "type": "external", "label": "OpenAI OAuth", "sublabel": "授权、设备码、刷新", "pos": [270, 90], "size": [150, 64], "sources": [{ "path": "common/openaioauth/oauth.go", "line": 1, "label": "OAuth 客户端" }] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "one-api-pro Go 服务进程", "wraps": ["api", "auth", "router", "relay", "billing", "adaptor"] },
+    { "kind": "security-group", "label": "应用状态边界", "wraps": ["db", "cache"], "pad": 18 },
+    { "kind": "region", "label": "外部系统", "wraps": ["client", "oauth", "upstream"], "pad": 18 }
+  ],
+  "connections": [
+    { "from": "client", "to": "api", "variant": "emphasis", "route": "orthogonal-h", "fromSide": "right", "toSide": "left" },
+    { "from": "web", "to": "api", "label": "管理 REST", "variant": "emphasis", "route": "orthogonal-h", "fromSide": "right", "toSide": "left", "labelDy": -28 },
+    { "from": "api", "to": "auth", "label": "认证上下文", "variant": "security", "route": "orthogonal-v", "fromSide": "top", "toSide": "bottom", "labelDx": -22 },
+    { "from": "web", "to": "oauth", "label": "启动授权", "variant": "security", "route": "straight", "fromSide": "right", "toSide": "left", "labelDy": -24 },
+    { "from": "oauth", "to": "api", "label": "回调 / 轮询", "variant": "security", "route": "orthogonal-v", "fromSide": "bottom", "toSide": "top", "labelDx": 24 },
+    { "from": "api", "to": "router", "label": "Distribute", "variant": "emphasis", "route": "orthogonal-h", "fromSide": "right", "toSide": "left", "labelDy": -24 },
+    { "from": "router", "to": "db", "variant": "default", "route": "orthogonal-v", "fromSide": "top", "toSide": "bottom" },
+    { "from": "router", "to": "cache", "variant": "dashed", "route": "orthogonal-v", "fromSide": "bottom", "toSide": "top" },
+    { "from": "router", "to": "relay", "label": "选定渠道上下文", "variant": "emphasis", "route": "straight", "fromSide": "right", "toSide": "left", "labelDy": -44 },
+    { "from": "relay", "to": "billing", "variant": "dashed", "route": "orthogonal-v", "fromSide": "top", "toSide": "bottom" },
+    { "from": "relay", "to": "adaptor", "variant": "emphasis", "route": "orthogonal-h", "fromSide": "right", "toSide": "left" },
+    { "from": "adaptor", "to": "upstream", "label": "转换后请求", "variant": "emphasis", "route": "straight", "fromSide": "right", "toSide": "left", "labelDy": -44 },
+    { "from": "upstream", "to": "adaptor", "variant": "default", "route": "orthogonal-h", "fromSide": "left", "toSide": "right" },
+    { "from": "billing", "to": "db", "label": "配额与日志", "variant": "dashed", "route": "orthogonal-h", "fromSide": "right", "toSide": "left", "labelDy": -24 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "核心边界", "items": ["/api 负责管理与用户能力，/v1 负责兼容转发", "Distribute 选择渠道并写入请求上下文", "Adaptor 将统一请求转换为供应商协议"] },
+    { "dot": "emerald", "title": "状态与可靠性", "items": ["数据库是用户、渠道、配额和日志的持久化来源", "路由器支持优先级、权重、粘性会话、RPM 与并发控制", "Relay 在可重试错误上执行备用渠道与 fallback"] },
+    { "dot": "amber", "title": "扩展观察", "items": ["新增供应商主要落在 relay/adaptor/provider 下并通过注册表接入", "OpenAI Codex OAuth 通过独立凭证流程接入现有渠道模型", "当前缓存与 OAuth flow store 均为进程内状态，多实例部署需额外治理"] }
+  ]
+}

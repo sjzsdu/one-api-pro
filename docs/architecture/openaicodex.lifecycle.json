@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "OpenAI Codex OAuth 首次授权生命周期",
+    "output": "docs/architecture/openaicodex.lifecycle.html",
+    "viewBox": [1160, 700],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "first-login", "label": "首次登录主路径", "focus": ["start", "authorize", "pending", "callback", "saved"], "note": "管理员启动授权，回调完成后凭证写入渠道。" },
+      { "id": "failure-exits", "label": "失败与过期", "focus": ["authorize", "pending", "callback", "failed", "expired"], "note": "拒绝、换 token 失败和 flow TTL 都有明确出口。" },
+      { "id": "runtime-note", "label": "运行时凭证", "focus": ["saved"], "note": "保存后的 credential 由 Codex Adaptor 在请求时解析，过期时刷新并回写。" }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "授权主流程" },
+    { "id": "waiting", "label": "等待与回调" },
+    { "id": "exceptions", "label": "异常出口" },
+    { "id": "terminal", "label": "终止状态" }
+  ],
+  "states": [
+    { "id": "start", "type": "start", "label": "开始登录", "sublabel": "管理员点击设备码登录", "lane": "main", "col": 0, "step": "01", "tag": "entry" },
+    { "id": "authorize", "type": "active", "label": "OpenAI 授权", "sublabel": "PKCE / device code", "lane": "main", "col": 1, "step": "02", "tag": "external" },
+    { "id": "pending", "type": "waiting", "label": "等待回调", "sublabel": "flow pending，前端轮询", "lane": "waiting", "col": 0, "step": "03", "tag": "poll" },
+    { "id": "callback", "type": "active", "label": "处理回调", "sublabel": "state + token exchange", "lane": "main", "col": 2, "step": "04", "tag": "server" },
+    { "id": "saved", "type": "success", "label": "凭证已保存", "sublabel": "写入 Channel.Key", "lane": "main", "col": 3, "step": "05", "tag": "ready" },
+    { "id": "failed", "type": "failure", "label": "授权失败", "sublabel": "拒绝或换 token 失败", "lane": "exceptions", "col": 0, "yOffset": 72, "tag": "error" },
+    { "id": "expired", "type": "failure", "label": "流程过期", "sublabel": "flow store TTL / GC", "lane": "terminal", "col": 1, "tag": "terminal" }
+  ],
+  "transitions": [
+    { "id": "start-authorize", "from": "start", "to": "authorize", "variant": "security", "label": "生成授权 URL", "route": "straight", "labelDy": -34 },
+    { "id": "authorize-pending", "from": "authorize", "to": "pending", "variant": "default", "route": "drop", "fromSide": "bottom", "toSide": "top", "note": "用户完成授权后等待服务端回调或前端轮询发现" },
+    { "id": "pending-callback", "from": "pending", "to": "callback", "variant": "emphasis", "route": "drop", "fromSide": "top", "toSide": "bottom", "note": "回调到达或轮询返回 success" },
+    { "id": "callback-saved", "from": "callback", "to": "saved", "variant": "emphasis", "label": "保存 credential", "route": "straight", "labelDy": -34 },
+    { "id": "authorize-failed", "from": "authorize", "to": "failed", "variant": "security", "route": "straight", "fromSide": "bottom", "toSide": "right", "via": [[248, 342], [520, 342], [520, 379]], "note": "用户拒绝或 OAuth 错误" },
+    { "id": "pending-expired", "from": "pending", "to": "expired", "variant": "security", "route": "straight", "fromSide": "right", "toSide": "top", "via": [[540, 307], [540, 450]], "note": "超过 flow TTL 后由 GC 清理" }
+  ]
+}
