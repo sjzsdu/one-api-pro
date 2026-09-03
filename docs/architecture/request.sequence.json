@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "一次文本请求的转发时序",
+    "output": "docs/architecture/request.sequence.html",
+    "viewBox": [1260, 640],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "auth-and-route", "label": "认证与选路", "focus": ["client", "api", "auth", "router", "db"], "note": "请求先建立身份与分组，再选择可用渠道。" },
+      { "id": "translate-and-bill", "label": "转换与计费", "focus": ["router", "handler", "billing", "adaptor"], "note": "统一请求进入计费预扣和供应商协议转换。" },
+      { "id": "retry-and-return", "label": "响应与重试", "focus": ["handler", "adaptor", "upstream", "billing", "client"], "note": "响应解析后结算；失败时由 Relay 决定重试或 fallback。" }
+    ]
+  },
+  "participants": [
+    { "id": "client", "type": "external", "label": "客户端", "sublabel": "chat completions" },
+    { "id": "api", "type": "backend", "label": "Gin 路由", "sublabel": "router/relay.go" },
+    { "id": "auth", "type": "security", "label": "认证中间件", "sublabel": "UserAuth / TokenAuth" },
+    { "id": "router", "type": "backend", "label": "渠道分发", "sublabel": "选路中间件" },
+    { "id": "db", "type": "database", "label": "数据库", "sublabel": "用户、渠道、日志" },
+    { "id": "handler", "type": "backend", "label": "文本处理器", "sublabel": "relay/handler/text.go" },
+    { "id": "billing", "type": "backend", "label": "计费模块", "sublabel": "pre / post consume" },
+    { "id": "adaptor", "type": "backend", "label": "Adaptor", "sublabel": "转换、请求、响应" },
+    { "id": "upstream", "type": "external", "label": "上游模型", "sublabel": "provider endpoint" }
+  ],
+  "segments": [
+    { "from": 150, "to": 280, "label": "入口与身份" },
+    { "from": 285, "to": 390, "label": "选路与预扣" },
+    { "from": 400, "to": 555, "label": "上游调用与结算" }
+  ],
+  "messages": [
+    { "id": "request", "from": "client", "to": "api", "y": 160, "label": "提交聊天请求", "variant": "emphasis", "note": "兼容 OpenAI Chat Completions 请求格式" },
+    { "id": "authenticate", "from": "api", "to": "auth", "y": 195, "label": "校验用户 / Token", "variant": "security" },
+    { "id": "distribute", "from": "api", "to": "router", "y": 230, "label": "按模型与分组选渠道", "variant": "emphasis" },
+    { "id": "channel-read", "from": "router", "to": "db", "y": 265, "label": "查询并选定渠道", "variant": "default" },
+    { "id": "helper", "from": "api", "to": "handler", "y": 300, "label": "进入文本处理器", "variant": "emphasis", "note": "选定的 Channel / Group / Meta 已在 context 中" },
+    { "id": "prebill", "from": "handler", "to": "billing", "y": 335, "label": "预扣配额", "variant": "security", "note": "根据模型价格、输入 token 和分组折扣计算" },
+    { "id": "convert", "from": "handler", "to": "adaptor", "y": 370, "label": "ConvertRequest + Init", "variant": "emphasis" },
+    { "id": "upstream-request", "from": "adaptor", "to": "upstream", "y": 405, "label": "发送供应商请求", "variant": "emphasis" },
+    { "id": "upstream-response", "from": "upstream", "to": "adaptor", "y": 435, "label": "SSE / JSON 响应", "variant": "return" },
+    { "id": "parse-response", "from": "adaptor", "to": "handler", "y": 465, "label": "DoResponse + usage", "variant": "return" },
+    { "id": "postbill", "from": "handler", "to": "billing", "y": 495, "label": "异步后扣配额", "variant": "dashed" },
+    { "id": "response", "from": "handler", "to": "client", "y": 525, "label": "返回统一响应 / 流", "variant": "return" },
+    { "id": "retry", "from": "api", "to": "router", "y": 553, "label": "失败时重选渠道并重试", "variant": "security", "note": "仅在错误链判定 ShouldRetry 时进入" }
+  ],
+  "activations": [
+    { "participant": "api", "from": 156, "to": 592, "type": "backend" },
+    { "participant": "auth", "from": 189, "to": 200, "type": "security" },
+    { "participant": "router", "from": 224, "to": 270, "type": "backend" },
+    { "participant": "db", "from": 260, "to": 275, "type": "database" },
+    { "participant": "handler", "from": 294, "to": 550, "type": "backend" },
+    { "participant": "billing", "from": 330, "to": 345, "type": "backend" },
+    { "participant": "adaptor", "from": 365, "to": 485, "type": "backend" },
+    { "participant": "upstream", "from": 400, "to": 450, "type": "external" }
+  ]
+}

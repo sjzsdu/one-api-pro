@@ -116,9 +116,38 @@ dist/one-api-pro-darwin-amd64
 dist/one-api-pro-darwin-arm64
 ```
 
+### 5. 构建并安装当前平台版本
+
+根目录提供 `Makefile`，会先构建前端，再构建嵌入前端产物的后端，并安装可执行文件：
+
+```bash
+make install
+```
+
+默认安装到 `$HOME/.local/bin/one-api-pro`，通常不需要管理员权限：
+
+```bash
+make install
+```
+
+如果需要安装到系统目录，可以覆盖 `PREFIX` 并使用管理员权限：
+
+```bash
+sudo make install PREFIX=/usr/local
+```
+
+也可以使用 `PREFIX` 安装到其他前缀，或使用 `DESTDIR` 制作 staging 目录：
+
+```bash
+make install PREFIX=/opt/one-api-pro
+make install DESTDIR=/tmp/one-api-pro-package PREFIX=/usr
+```
+
+仅构建、不安装可执行文件可执行 `make build`；查看所有目标和可覆盖变量可执行 `make help`。
+
 > 其中 `linux-*` 为静态链接，CentOS / Ubuntu 通用。GitHub Releases 由 `.github/workflows/release.yml` 在推送 `v*` tag 时自动构建发布，与本地 `release.sh` 输出逻辑一致。
 
-### 5. 启动
+### 6. 启动
 
 ```bash
 ./one-api-pro --port 3000 --log-dir ./logs
