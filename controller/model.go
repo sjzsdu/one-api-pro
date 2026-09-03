@@ -6,8 +6,8 @@ import (
 	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/relay/meta"
-	relaymodel "github.com/modelbus/one-api-pro/relay/schema"
 	"github.com/modelbus/one-api-pro/relay/registry"
+	relaymodel "github.com/modelbus/one-api-pro/relay/schema"
 	"net/http"
 	"strings"
 )
@@ -90,10 +90,17 @@ func init() {
 }
 
 func DashboardListModels(c *gin.Context) {
+	channelModels := make(map[int][]string, len(channelId2Models))
+	for channelID, modelList := range channelId2Models {
+		channelModels[channelID] = append([]string(nil), modelList...)
+	}
+	if openRouterModels, _, err := getOpenRouterModelList("", "", false); err == nil && len(openRouterModels) > 0 {
+		channelModels[20] = openRouterModels
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    channelId2Models,
+		"data":    channelModels,
 	})
 }
 

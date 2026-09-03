@@ -185,7 +185,12 @@
           <a-input v-model="form.base_url" placeholder="https://api.openai.com" allow-clear />
         </a-form-item>
         <a-form-item field="models" label="模型">
-          <a-input v-model="form.models" placeholder="多个模型用逗号分隔" allow-clear />
+          <a-space fill>
+            <a-input v-model="form.models" placeholder="多个模型用逗号分隔" allow-clear />
+            <a-button v-if="form.type === 20 || form.type === 52" :loading="refreshingModels" @click="refreshChannelModels">
+              刷新模型
+            </a-button>
+          </a-space>
         </a-form-item>
         <a-form-item field="groups" label="分组">
           <a-input v-model="form.groups" placeholder="多个分组用逗号分隔" allow-clear />
@@ -193,6 +198,14 @@
         <a-form-item field="key" label="密钥" :required="!isEdit">
           <a-input-password v-model="form.key" :placeholder="isEdit ? '留空表示不修改密钥' : 'API Key'" />
           <span v-if="isEdit" class="form-hint">留空表示不修改密钥</span>
+        </a-form-item>
+        <a-form-item v-if="form.type === 52" label="OpenAI 登录">
+          <a-button :loading="oauthLoading" @click="startOpenAIOAuth">使用 OpenAI 设备码登录</a-button>
+          <div v-if="oauthFlow" class="form-hint">
+            请在新窗口完成授权；状态：{{ oauthFlow.status }}
+            <a-link v-if="oauthFlow.verify_url" :href="oauthFlow.verify_url" target="_blank">打开授权页</a-link>
+            <span v-if="oauthFlow.user_code">，设备码：{{ oauthFlow.user_code }}</span>
+          </div>
         </a-form-item>
         <a-divider :margin="6" />
         <a-form-item field="is_fallback" :label="$t('channel.fallback')">
@@ -226,6 +239,7 @@ const typeNameMap = {
   32: '阶跃星辰', 34: 'Coze', 35: 'Cohere', 36: 'DeepSeek',
   37: 'Cloudflare', 38: 'DeepL', 39: 'together.ai', 42: 'VertexAI',
   43: 'Proxy', 44: 'SiliconFlow', 45: 'xAI', 46: 'Replicate',
+  52: 'OpenAI OAuth (Codex)',
   8: '自定义渠道', 22: '知识库：FastGPT', 21: '知识库：AI Proxy',
   20: 'OpenRouter', 2: '代理：API2D', 5: '代理：OpenAI-SB',
   7: '代理：OhMyGPT', 10: '代理：AI Proxy', 4: '代理：CloseAI',
@@ -244,6 +258,7 @@ const typeColorMap = {
   37: 'orange', 38: 'gray', 39: 'arcoblue', 42: 'arcoblue',
   43: 'arcoblue', 44: 'arcoblue', 45: 'arcoblue', 46: 'arcoblue',
   8: 'pinkpurple', 22: 'arcoblue', 21: 'purple',
+  52: 'green',
   20: 'gray', 2: 'arcoblue', 5: 'gold', 7: 'purple',
   10: 'purple', 4: 'cyan', 6: 'purple', 9: 'gold', 12: 'arcoblue',
   13: 'purple',
@@ -277,6 +292,9 @@ const testingAll = ref(false)
 const updatingBalance = ref(false)
 const deletingDisabled = ref(false)
 const testingIds = ref([])
+const oauthLoading = ref(false)
+const oauthFlow = ref(null)
+const refreshingModels = ref(false)
 
 const formRef = ref(null)
 const form = reactive({
@@ -436,6 +454,64 @@ async function handleSubmit() {
     Message.error(e.response?.data?.message || e.message || '操作失败')
   } finally {
     submitting.value = false
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function refreshChannelModels() {
+  refreshingModels.value = true
+  try {
+    const { data } = await api.post('/api/channel/models/refresh', {
+      id: editingId.value || 0,
+      type: form.type,
+      key: form.key,
+      base_url: form.base_url,
+    })
+    if (!data.success) throw new Error(data.message || '模型刷新失败')
+    form.models = (data.data?.models || []).join(',')
+    Message.success(`已刷新 ${data.data?.models?.length || 0} 个模型`)
+  } catch (e) {
+    Message.error(e.response?.data?.message || e.message || '模型刷新失败')
+  } finally {
+    refreshingModels.value = false
+  }
+}
+
+async function startOpenAIOAuth() {
+  oauthLoading.value = true
+  oauthFlow.value = null
+  const popup = window.open('about:blank', '_blank')
+  try {
+    const { data } = await api.post('/api/oauth/openai/login', { method: 'device_code' })
+    if (!data.success) throw new Error(data.message || 'OpenAI 登录启动失败')
+    oauthFlow.value = data.data
+    if (popup && data.data?.verify_url) popup.location.href = data.data.verify_url
+    const interval = Math.max(Number(data.data?.interval || 5), 1) * 1000
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      await sleep(interval)
+      const result = await api.post(`/api/oauth/openai/flows/${data.data.flow_id}/poll`)
+      if (!result.data.success) throw new Error(result.data.message || 'OpenAI 登录轮询失败')
+      const flow = result.data.data
+      oauthFlow.value = flow
+      if (flow.status === 'success') {
+        form.key = flow.credential || ''
+        if (!form.models) form.models = 'gpt-5.5,gpt-5.4,gpt-5.4-mini,gpt-5.4-nano'
+        Message.success('OpenAI OAuth 登录成功，请保存渠道')
+        return
+      }
+      if (flow.status === 'error' || flow.status === 'expired') {
+        throw new Error(flow.error || 'OpenAI 登录未完成')
+      }
+    }
+    throw new Error('OpenAI 登录超时，请重试')
+  } catch (e) {
+    if (popup && !popup.closed) popup.close()
+    Message.error(e.response?.data?.message || e.message || 'OpenAI 登录失败')
+  } finally {
+    oauthLoading.value = false
   }
 }
 

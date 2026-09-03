@@ -26,6 +26,10 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/oidc", middleware.CriticalRateLimit(), auth.OidcAuth)
 		apiRouter.GET("/oauth/lark", middleware.CriticalRateLimit(), auth.LarkOAuth)
 		apiRouter.GET("/oauth/state", middleware.CriticalRateLimit(), auth.GenerateOAuthCode)
+		apiRouter.POST("/oauth/openai/login", middleware.AdminAuth(), controller.StartOpenAIOAuth)
+		apiRouter.GET("/oauth/openai/flows/:id", middleware.AdminAuth(), controller.GetOpenAIOAuthFlow)
+		apiRouter.POST("/oauth/openai/flows/:id/poll", middleware.AdminAuth(), controller.PollOpenAIOAuthFlow)
+		apiRouter.GET("/oauth/openai/callback", controller.OpenAIOAuthCallback)
 		apiRouter.GET("/oauth/wechat", middleware.CriticalRateLimit(), auth.WeChatAuth)
 		apiRouter.GET("/oauth/wechat/bind", middleware.CriticalRateLimit(), middleware.UserAuth(), auth.WeChatBind)
 		apiRouter.GET("/oauth/email/bind", middleware.CriticalRateLimit(), middleware.UserAuth(), controller.EmailBind)
@@ -48,7 +52,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/aff", controller.GetAffCode)
 				selfRoute.POST("/topup", controller.TopUp)
 				selfRoute.GET("/available_models", controller.GetUserAvailableModels)
-			selfRoute.GET("/subscription", controller.GetUserSubscriptionInfo)
+				selfRoute.GET("/subscription", controller.GetUserSubscriptionInfo)
 			}
 
 			adminRoute := userRoute.Group("/")
@@ -75,6 +79,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/", controller.GetAllChannels)
 			channelRoute.GET("/search", controller.SearchChannels)
 			channelRoute.GET("/models", controller.ListAllModels)
+			channelRoute.POST("/models/refresh", controller.RefreshChannelModels)
 			channelRoute.GET("/:id", controller.GetChannel)
 			channelRoute.GET("/test", controller.TestChannels)
 			channelRoute.GET("/test/:id", controller.TestChannel)
