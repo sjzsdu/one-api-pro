@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -8,10 +9,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/modelbus/one-api-pro/channelrouter"
+	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/config"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/model"
+	"github.com/modelbus/one-api-pro/modelrouter"
+	schema "github.com/modelbus/one-api-pro/relay/schema"
 	"github.com/modelbus/one-api-pro/relay/registry"
 )
 
@@ -54,6 +58,28 @@ func Distribute() func(c *gin.Context) {
 			}
 		} else {
 			requestModel = c.GetString(ctxkey.RequestModel)
+			if requestModel == "auto" && config.ModelAutoEnabled && modelrouter.DefaultRouter != nil {
+				c.Set(ctxkey.OriginalRequestModel, requestModel)
+				var messages []schema.Message
+				if body, err := common.GetRequestBody(c); err == nil {
+					var parsed struct {
+						Messages []schema.Message `json:"messages"`
+					}
+					if json.Unmarshal(body, &parsed) == nil {
+						messages = parsed.Messages
+					}
+				}
+				selected, err := modelrouter.DefaultRouter.SelectModel(ctx, userGroup, userId, &modelrouter.ModelSelectRequest{
+					Model:    requestModel,
+					Messages: messages,
+				})
+				if err != nil {
+					abortWithMessage(c, http.StatusServiceUnavailable, fmt.Sprintf("model auto 路由失败: %s", err.Error()))
+					return
+				}
+				requestModel = selected
+				c.Set(ctxkey.RequestModel, requestModel)
+			}
 			var err error
 			channel, err = selectChannelViaRouter(c, userGroup, requestModel, userId, false)
 			if err != nil {
