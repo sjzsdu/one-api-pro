@@ -1,0 +1,6 @@
+{
+  "0": ["deepseek-chat", "gpt-4o", "deepseek-reasoner", "gpt-4o-mini"],
+  "1": ["deepseek-reasoner", "gpt-4o", "deepseek-chat", "gpt-4o-mini"],
+  "2": ["deepseek-reasoner", "gpt-4o", "deepseek-chat", "gpt-4o-mini"],
+  "3": ["gpt-4o", "gpt-4o-mini", "deepseek-chat", "deepseek-reasoner"]
+}
