@@ -96,6 +96,7 @@ func specialModelScore(name string, turnType TurnType) int {
 	return score
 }
 
+
 func extractPrompt(messages []schema.Message) string {
 	var sb strings.Builder
 	for _, msg := range messages {
@@ -158,3 +159,4 @@ func scoreModels(prompt string, models []string) []float64 {
 	}
 	return scores
 }
+
