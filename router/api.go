@@ -124,6 +124,11 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			groupRoute.GET("/", controller.GetGroups)
 		}
+		modelRouterRoute := apiRouter.Group("/model_router")
+		modelRouterRoute.Use(middleware.AdminAuth())
+		{
+			modelRouterRoute.GET("/decisions", controller.GetRoutingDecisions)
+		}
 		modelPriceRoute := apiRouter.Group("/model_price")
 		modelPriceRoute.Use(middleware.RootAuth())
 		{

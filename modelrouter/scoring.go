@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/modelbus/one-api-pro/model"
 	schema "github.com/modelbus/one-api-pro/relay/schema"
@@ -22,31 +23,46 @@ func (r *ScoringModelRouter) Name() string {
 	return "scoring"
 }
 
-func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, _ int, req *ModelSelectRequest) (string, error) {
+func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, userID int, req *ModelSelectRequest) (string, error) {
+	started := time.Now()
 	models, err := model.CacheGetGroupModels(ctx, group)
 	if err != nil || len(models) == 0 {
-		return "", fmt.Errorf("no available models for group %s", group)
+		routeErr := fmt.Errorf("no available models for group %s", group)
+		RecordRoutingDecision(ctx, RoutingDecision{
+			Strategy: r.Name(), Group: group, UserID: userID,
+			Reason: "no candidates available", Error: routeErr.Error(), LatencyMs: time.Since(started).Milliseconds(),
+		})
+		return "", routeErr
 	}
 
 	if req == nil {
-		return models[rand.Intn(len(models))], nil
+		return r.recordFallback(ctx, group, userID, models, started, "request is nil"), nil
 	}
 	features := requestFeatures(req)
 	turnType := DetectTurnType(features)
 	if turnType != TurnTypeNormal {
 		req.DisableSessionPin = true
-		return selectSpecialModel(models, turnType), nil
+		selected := selectSpecialModel(models, turnType)
+		RecordRoutingDecision(ctx, RoutingDecision{
+			Model: selected, Strategy: r.Name(), Group: group, UserID: userID,
+			Candidates: models, Reason: fmt.Sprintf("special turn type: %s", turnType), LatencyMs: time.Since(started).Milliseconds(),
+		})
+		return selected, nil
 	}
 	if len(req.Messages) == 0 {
-		return models[rand.Intn(len(models))], nil
+		return r.recordFallback(ctx, group, userID, models, started, "request contains no messages"), nil
 	}
 
 	prompt := extractPrompt(req.Messages)
 	if prompt == "" {
-		return models[rand.Intn(len(models))], nil
+		return r.recordFallback(ctx, group, userID, models, started, "request contains no user prompt"), nil
 	}
 
 	scores := scoreModels(prompt, models)
+	candidateScores := make(map[string]float64, len(models))
+	for i, candidate := range models {
+		candidateScores[candidate] = scores[i]
+	}
 	bestIdx := 0
 	bestScore := scores[0]
 	for i, s := range scores {
@@ -57,9 +73,30 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, _ in
 	}
 
 	if bestScore == 0 {
-		return models[rand.Intn(len(models))], nil
+		selected := models[rand.Intn(len(models))]
+		RecordRoutingDecision(ctx, RoutingDecision{
+			Model: selected, Strategy: r.Name(), Group: group, UserID: userID,
+			Candidates: models, CandidateScores: candidateScores,
+			Reason: "keyword scoring produced no match; random fallback", LatencyMs: time.Since(started).Milliseconds(),
+		})
+		return selected, nil
 	}
-	return models[bestIdx], nil
+	selected := models[bestIdx]
+	RecordRoutingDecision(ctx, RoutingDecision{
+		Model: selected, Score: bestScore, Scores: map[string]float64{"keyword": bestScore},
+		Strategy: r.Name(), Group: group, UserID: userID, Candidates: models, CandidateScores: candidateScores,
+		Reason: "highest keyword-category score", LatencyMs: time.Since(started).Milliseconds(),
+	})
+	return selected, nil
+}
+
+func (r *ScoringModelRouter) recordFallback(ctx context.Context, group string, userID int, models []string, started time.Time, reason string) string {
+	selected := models[rand.Intn(len(models))]
+	RecordRoutingDecision(ctx, RoutingDecision{
+		Model: selected, Strategy: r.Name(), Group: group, UserID: userID,
+		Candidates: models, Reason: reason + "; random fallback", LatencyMs: time.Since(started).Milliseconds(),
+	})
+	return selected
 }
 
 func requestFeatures(req *ModelSelectRequest) *RequestFeatures {
@@ -159,4 +196,3 @@ func scoreModels(prompt string, models []string) []float64 {
 	}
 	return scores
 }
-

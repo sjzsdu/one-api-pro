@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/modelbus/one-api-pro/model"
 )
@@ -20,10 +21,21 @@ func (r *RandomModelRouter) Name() string {
 	return "random"
 }
 
-func (r *RandomModelRouter) SelectModel(_ context.Context, group string, _ int, _ *ModelSelectRequest) (string, error) {
-	models, err := model.CacheGetGroupModels(context.Background(), group)
+func (r *RandomModelRouter) SelectModel(ctx context.Context, group string, userID int, _ *ModelSelectRequest) (string, error) {
+	started := time.Now()
+	models, err := model.CacheGetGroupModels(ctx, group)
 	if err != nil || len(models) == 0 {
-		return "", fmt.Errorf("no available models for group %s", group)
+		routeErr := fmt.Errorf("no available models for group %s", group)
+		RecordRoutingDecision(ctx, RoutingDecision{
+			Strategy: r.Name(), Group: group, UserID: userID,
+			Reason: "no candidates available", Error: routeErr.Error(), LatencyMs: time.Since(started).Milliseconds(),
+		})
+		return "", routeErr
 	}
-	return models[rand.Intn(len(models))], nil
+	selected := models[rand.Intn(len(models))]
+	RecordRoutingDecision(ctx, RoutingDecision{
+		Model: selected, Strategy: r.Name(), Group: group, UserID: userID,
+		Candidates: models, Reason: "uniform random selection", LatencyMs: time.Since(started).Milliseconds(),
+	})
+	return selected, nil
 }

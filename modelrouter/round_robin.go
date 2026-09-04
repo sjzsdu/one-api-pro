@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/modelbus/one-api-pro/model"
 )
@@ -22,11 +23,22 @@ func (r *RoundRobinModelRouter) Name() string {
 	return "round_robin"
 }
 
-func (r *RoundRobinModelRouter) SelectModel(_ context.Context, group string, _ int, _ *ModelSelectRequest) (string, error) {
-	models, err := model.CacheGetGroupModels(context.Background(), group)
+func (r *RoundRobinModelRouter) SelectModel(ctx context.Context, group string, userID int, _ *ModelSelectRequest) (string, error) {
+	started := time.Now()
+	models, err := model.CacheGetGroupModels(ctx, group)
 	if err != nil || len(models) == 0 {
-		return "", fmt.Errorf("no available models for group %s", group)
+		routeErr := fmt.Errorf("no available models for group %s", group)
+		RecordRoutingDecision(ctx, RoutingDecision{
+			Strategy: r.Name(), Group: group, UserID: userID,
+			Reason: "no candidates available", Error: routeErr.Error(), LatencyMs: time.Since(started).Milliseconds(),
+		})
+		return "", routeErr
 	}
 	idx := atomic.AddUint64(&r.counter, 1)
-	return models[idx%uint64(len(models))], nil
+	selected := models[idx%uint64(len(models))]
+	RecordRoutingDecision(ctx, RoutingDecision{
+		Model: selected, Strategy: r.Name(), Group: group, UserID: userID,
+		Candidates: models, Reason: "round-robin selection", LatencyMs: time.Since(started).Milliseconds(),
+	})
+	return selected, nil
 }
