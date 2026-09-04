@@ -105,6 +105,10 @@ var ChannelMaxCooldownSeconds = env.Int("CHANNEL_MAX_COOLDOWN_SECONDS", 600)
 var ChannelConcurrencyEnabled = env.Bool("CHANNEL_CONCURRENCY_ENABLED", false)
 var ChannelStickySessionEnabled = env.Bool("CHANNEL_STICKY_SESSION_ENABLED", false)
 
+var ModelAutoEnabled = env.Bool("MODEL_AUTO_ENABLED", false)
+var ModelRouterStrategy = env.String("MODEL_ROUTER_STRATEGY", "random")
+var ScoringLLMProvider = env.String("SCORING_LLM_PROVIDER", "")
+
 var ErrorNext = ErrorNextConfig{
 	Passthrough: true,
 	Retry:       true,

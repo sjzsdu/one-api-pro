@@ -10,6 +10,8 @@ import (
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 
+	"github.com/modelbus/one-api-pro/channelrouter"
+	"github.com/modelbus/one-api-pro/cluster"
 	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/client"
 	"github.com/modelbus/one-api-pro/common/config"
@@ -18,8 +20,7 @@ import (
 	"github.com/modelbus/one-api-pro/controller"
 	"github.com/modelbus/one-api-pro/middleware"
 	"github.com/modelbus/one-api-pro/model"
-	"github.com/modelbus/one-api-pro/channelrouter"
-	"github.com/modelbus/one-api-pro/cluster"
+	"github.com/modelbus/one-api-pro/modelrouter"
 	"github.com/modelbus/one-api-pro/relay/adaptor/openai"
 	"github.com/modelbus/one-api-pro/router"
 )
@@ -98,6 +99,7 @@ func main() {
 	openai.InitTokenEncoders()
 	client.Init()
 	channelrouter.InitRouter()
+	modelrouter.InitRouter(config.ModelRouterStrategy)
 
 	// 初始化集群模块
 	cluster.Init(model.DB)

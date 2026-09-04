@@ -1,17 +1,23 @@
 package middleware
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/modelbus/one-api-pro/channelrouter"
+	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/config"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/model"
+	"github.com/modelbus/one-api-pro/modelrouter"
 	"github.com/modelbus/one-api-pro/relay/registry"
 )
 
@@ -19,8 +25,25 @@ type ModelRequest struct {
 	Model string `json:"model" form:"model"`
 }
 
+// ModelAutoRoute resolves the virtual "auto" model before quota checks. The
+// same resolution is also performed defensively at the start of Distribute so
+// callers that compose the middleware directly retain the expected behavior.
+func ModelAutoRoute() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		if err := resolveAutoModel(c); err != nil {
+			abortWithMessage(c, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		c.Next()
+	}
+}
+
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
+		if err := resolveAutoModel(c); err != nil {
+			abortWithMessage(c, http.StatusServiceUnavailable, err.Error())
+			return
+		}
 		ctx := c.Request.Context()
 		userId := c.GetInt(ctxkey.Id)
 		userGroup, _ := model.CacheGetUserGroup(userId)
@@ -101,6 +124,102 @@ func Distribute() func(c *gin.Context) {
 			channelrouter.DefaultRouter.ReleaseConcurrency(channel.Id)
 		}
 	}
+}
+
+func resolveAutoModel(c *gin.Context) error {
+	if !config.ModelAutoEnabled || c.GetString(ctxkey.RequestModel) != "auto" {
+		return nil
+	}
+
+	ctx := c.Request.Context()
+	userId := c.GetInt(ctxkey.Id)
+	group := c.GetString(ctxkey.Group)
+	if group == "" {
+		var err error
+		group, err = model.CacheGetUserGroup(userId)
+		if err != nil {
+			return fmt.Errorf("failed to get user group for automatic model routing: %w", err)
+		}
+		c.Set(ctxkey.Group, group)
+	}
+
+	request := &modelrouter.ModelSelectRequest{}
+	if err := common.UnmarshalBodyReusable(c, request); err != nil {
+		return fmt.Errorf("failed to parse request for automatic model routing: %w", err)
+	}
+
+	models, err := model.CacheGetGroupModels(ctx, group)
+	if err != nil {
+		return fmt.Errorf("failed to list models for automatic routing: %w", err)
+	}
+	request.AvailableModels = filterAvailableModels(models, c.GetString(ctxkey.AvailableModels))
+	if modelrouter.DefaultRouter == nil {
+		return fmt.Errorf("automatic model router is not initialized")
+	}
+	selected, err := modelrouter.DefaultRouter.SelectModel(ctx, group, userId, request)
+	if err != nil {
+		return fmt.Errorf("automatic model routing failed: %w", err)
+	}
+	if err := rewriteRequestModel(c, selected); err != nil {
+		return fmt.Errorf("failed to apply automatically selected model: %w", err)
+	}
+
+	c.Set(ctxkey.OriginalRequestModel, request.Model)
+	c.Set(ctxkey.RequestModel, selected)
+	logger.Debugf(ctx, "user id %d, user group: %s, model router: %s, selected model: %s", userId, group, modelrouter.DefaultRouter.Name(), selected)
+	return nil
+}
+
+func filterAvailableModels(groupModels []string, tokenModels string) []string {
+	allowed := make(map[string]struct{})
+	if tokenModels != "" {
+		for _, modelName := range strings.Split(tokenModels, ",") {
+			modelName = strings.TrimSpace(modelName)
+			if modelName != "" && modelName != "auto" {
+				allowed[modelName] = struct{}{}
+			}
+		}
+	}
+
+	result := make([]string, 0, len(groupModels))
+	seen := make(map[string]struct{}, len(groupModels))
+	for _, modelName := range groupModels {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" || modelName == "auto" {
+			continue
+		}
+		if _, ok := seen[modelName]; ok {
+			continue
+		}
+		if tokenModels != "" {
+			if _, ok := allowed[modelName]; !ok {
+				continue
+			}
+		}
+		seen[modelName] = struct{}{}
+		result = append(result, modelName)
+	}
+	return result
+}
+
+func rewriteRequestModel(c *gin.Context, selected string) error {
+	body, err := common.GetRequestBody(c)
+	if err != nil {
+		return err
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return err
+	}
+	payload["model"] = selected
+	updated, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	c.Set(ctxkey.KeyRequestBody, updated)
+	c.Request.Body = io.NopCloser(bytes.NewReader(updated))
+	c.Request.ContentLength = int64(len(updated))
+	return nil
 }
 
 func selectChannelViaRouter(c *gin.Context, group, modelName string, userId int, ignoreFirstPriority bool) (*model.Channel, error) {

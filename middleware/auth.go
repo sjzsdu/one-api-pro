@@ -5,6 +5,7 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/modelbus/one-api-pro/common/blacklist"
+	"github.com/modelbus/one-api-pro/common/config"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"github.com/modelbus/one-api-pro/common/network"
 	"github.com/modelbus/one-api-pro/model"
@@ -124,7 +125,8 @@ func TokenAuth() func(c *gin.Context) {
 		c.Set(ctxkey.RequestModel, requestModel)
 		if token.Models != nil && *token.Models != "" {
 			c.Set(ctxkey.AvailableModels, *token.Models)
-			if requestModel != "" && !isModelInList(requestModel, *token.Models) {
+			isEnabledAutoRequest := config.ModelAutoEnabled && requestModel == "auto"
+			if requestModel != "" && !isEnabledAutoRequest && !isModelInList(requestModel, *token.Models) {
 				abortWithMessage(c, http.StatusForbidden, fmt.Sprintf("该令牌无权使用模型：%s", requestModel))
 				return
 			}
