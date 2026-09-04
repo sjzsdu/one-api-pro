@@ -17,6 +17,7 @@ import (
 	"github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/middleware"
 	dbmodel "github.com/modelbus/one-api-pro/model"
+	"github.com/modelbus/one-api-pro/modelrouter"
 	"github.com/modelbus/one-api-pro/monitor"
 	"github.com/modelbus/one-api-pro/relay/handler"
 	"github.com/modelbus/one-api-pro/relay/interceptor"
@@ -89,6 +90,7 @@ func Relay(c *gin.Context) {
 	cooldownSeconds := getChannelCooldownSeconds(channelId)
 	errCtx := interceptor.BuildErrorContext(c, bizErr, channelId, channelName, cooldownSeconds)
 	processedErr := errorHandlerChain.Process(errCtx)
+	fallbackDecision := modelrouter.ClassifyFailure(toFallbackFailure(bizErr), requestFeaturesFromContext(c))
 
 	monitor.Emit(channelId, false)
 
@@ -98,8 +100,17 @@ func Relay(c *gin.Context) {
 		logger.Errorf(ctx, "relay error happen, status code is %d, code: %v, type: %s, message: %s, won't retry in this case", bizErr.StatusCode, bizErr.Error.Code, bizErr.Error.Type, bizErr.Error.Message)
 		retryTimes = 0
 	}
+	if fallbackDecision.RetryProvider && retryTimes < fallbackDecision.MaxProviderRetries {
+		retryTimes = fallbackDecision.MaxProviderRetries
+		modelrouter.LogFallbackEvent(ctx, modelrouter.FallbackEvent{
+			FailedModel: originalModel,
+			StatusCode:  bizErr.StatusCode,
+			Decision:    fallbackDecision,
+			Outcome:     "retry_provider",
+		})
+	}
 	for i := retryTimes; i > 0; i-- {
-		ch, err := routeChannel(c, group, originalModel, userId, i != retryTimes)
+		ch, err := routeChannel(c, group, originalModel, userId, i != retryTimes, lastFailedChannelId)
 		if err != nil {
 			logger.Errorf(ctx, "routeChannel failed: %+v", err)
 			break
@@ -140,6 +151,24 @@ func Relay(c *gin.Context) {
 		monitor.Emit(ch.Id, false)
 	}
 
+	// Auto-routed requests may switch models once normal provider bindings for
+	// the selected model are exhausted. The fallback selector applies context,
+	// vision, and tool capability constraints before choosing a candidate.
+	if c.GetString(ctxkey.OriginalRequestModel) == "auto" && bizErr != nil {
+		autoErr, attempted := tryAutoModelFallback(c, group, relayMode, bizErr, originalModel, userId)
+		if attempted {
+			if autoErr == nil {
+				return
+			}
+			bizErr = autoErr
+			lastFailedChannelId = c.GetInt(ctxkey.ChannelId)
+			channelName = c.GetString(ctxkey.ChannelName)
+			retryCooldown := getChannelCooldownSeconds(lastFailedChannelId)
+			errCtx = interceptor.BuildErrorContext(c, bizErr, lastFailedChannelId, channelName, retryCooldown)
+			processedErr = errorHandlerChain.Process(errCtx)
+		}
+	}
+
 	// Fallback path: if every normal channel for the requested model failed
 	// (and the failure was retryable), attempt a single call on a configured
 	// fallback channel. The fallback channel typically advertises a single
@@ -165,7 +194,7 @@ func Relay(c *gin.Context) {
 	}
 }
 
-func routeChannel(c *gin.Context, group, modelName string, userId int, ignoreFirstPriority bool) (*dbmodel.Channel, error) {
+func routeChannel(c *gin.Context, group, modelName string, userId int, ignoreFirstPriority bool, excludedChannelId int) (*dbmodel.Channel, error) {
 	if channelrouter.DefaultRouter == nil {
 		return dbmodel.CacheGetRandomSatisfiedChannel(group, modelName, ignoreFirstPriority)
 	}
@@ -175,17 +204,12 @@ func routeChannel(c *gin.Context, group, modelName string, userId int, ignoreFir
 		return dbmodel.CacheGetRandomSatisfiedChannel(group, modelName, ignoreFirstPriority)
 	}
 
-	sessionKey := ""
-	if config.ChannelStickySessionEnabled && userId > 0 && modelName != "" {
-		sessionKey = channelrouter.MakeSessionKey(userId, modelName)
-	}
-
 	req := &channelrouter.RouteRequest{
 		Group:               group,
 		Model:               modelName,
 		UserId:              userId,
 		IgnoreFirstPriority: ignoreFirstPriority,
-		SessionKey:          sessionKey,
+		ExcludedChannelId:   excludedChannelId,
 	}
 
 	ch, err := channelrouter.DefaultRouter.Route(c.Request.Context(), req, candidates)
@@ -193,6 +217,113 @@ func routeChannel(c *gin.Context, group, modelName string, userId int, ignoreFir
 		return dbmodel.CacheGetRandomSatisfiedChannel(group, modelName, ignoreFirstPriority)
 	}
 	return ch, nil
+}
+
+func requestFeaturesFromContext(c *gin.Context) *modelrouter.RequestFeatures {
+	value, ok := c.Get(ctxkey.ModelRouterRequest)
+	if !ok {
+		return nil
+	}
+	request, ok := value.(*modelrouter.ModelSelectRequest)
+	if !ok || request == nil {
+		return nil
+	}
+	return request.Features
+}
+
+func toFallbackFailure(err *model.ErrorWithStatusCode) modelrouter.FallbackFailure {
+	if err == nil {
+		return modelrouter.FallbackFailure{}
+	}
+	return modelrouter.FallbackFailure{
+		StatusCode: err.StatusCode,
+		Code:       fmt.Sprint(err.Error.Code),
+		Message:    err.Error.Message,
+	}
+}
+
+func tryAutoModelFallback(c *gin.Context, group string, relayMode int, prevErr *model.ErrorWithStatusCode, failedModel string, userId int) (*model.ErrorWithStatusCode, bool) {
+	router, ok := modelrouter.DefaultRouter.(modelrouter.FallbackModelRouter)
+	if !ok {
+		return prevErr, false
+	}
+	value, ok := c.Get(ctxkey.ModelRouterRequest)
+	if !ok {
+		return prevErr, false
+	}
+	request, ok := value.(*modelrouter.ModelSelectRequest)
+	if !ok || request == nil {
+		return prevErr, false
+	}
+
+	failure := toFallbackFailure(prevErr)
+	selected, decision, err := router.SelectFallbackModel(c.Request.Context(), group, failedModel, request, failure)
+	if err != nil {
+		modelrouter.LogFallbackEvent(c.Request.Context(), modelrouter.FallbackEvent{
+			FailedModel: failedModel,
+			StatusCode:  failure.StatusCode,
+			Decision:    decision,
+			Outcome:     "no_compatible_model",
+		})
+		return prevErr, false
+	}
+	channel, err := routeChannel(c, group, selected, userId, false, 0)
+	if err != nil {
+		modelrouter.LogFallbackEvent(c.Request.Context(), modelrouter.FallbackEvent{
+			FailedModel:   failedModel,
+			SelectedModel: selected,
+			StatusCode:    failure.StatusCode,
+			Decision:      decision,
+			Outcome:       "no_provider",
+		})
+		return prevErr, false
+	}
+	if err := rewriteRequestModel(c, selected); err != nil {
+		logger.Errorf(c.Request.Context(), "auto model fallback rewrite failed: %+v", err)
+		return prevErr, false
+	}
+
+	middleware.SetupContextForSelectedChannel(c, channel, selected)
+	if config.ChannelConcurrencyEnabled && channelrouter.DefaultRouter != nil && channel.GetMaxConcurrency() > 0 {
+		if !channelrouter.DefaultRouter.TryAcquireConcurrency(channel.Id, channel.GetMaxConcurrency()) {
+			return prevErr, false
+		}
+		defer channelrouter.DefaultRouter.ReleaseConcurrency(channel.Id)
+	}
+	requestBody, _ := common.GetRequestBody(c)
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+	modelrouter.LogFallbackEvent(c.Request.Context(), modelrouter.FallbackEvent{
+		FailedModel:   failedModel,
+		SelectedModel: selected,
+		StatusCode:    failure.StatusCode,
+		Decision:      decision,
+		Outcome:       "attempt_model",
+	})
+	fallbackErr := relayHelper(c, relayMode)
+	if fallbackErr != nil {
+		monitor.Emit(channel.Id, false)
+		modelrouter.LogFallbackEvent(c.Request.Context(), modelrouter.FallbackEvent{
+			FailedModel:   failedModel,
+			SelectedModel: selected,
+			StatusCode:    fallbackErr.StatusCode,
+			Decision:      decision,
+			Outcome:       "model_failed",
+		})
+		return fallbackErr, true
+	}
+	monitor.Emit(channel.Id, true)
+	if !request.DisableSessionPin && config.ChannelStickySessionEnabled && channelrouter.DefaultRouter != nil && userId > 0 {
+		sessionKey := channelrouter.MakeSessionKey(userId, selected)
+		channelrouter.DefaultRouter.SetStickySession(sessionKey, channel.Id)
+	}
+	modelrouter.LogFallbackEvent(c.Request.Context(), modelrouter.FallbackEvent{
+		FailedModel:   failedModel,
+		SelectedModel: selected,
+		StatusCode:    failure.StatusCode,
+		Decision:      decision,
+		Outcome:       "success",
+	})
+	return nil, true
 }
 
 func getChannelCooldownSeconds(channelId int) int {

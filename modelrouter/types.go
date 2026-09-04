@@ -12,6 +12,10 @@ type ModelRouter interface {
 }
 
 type ModelSelectRequest struct {
-	Model    string           `json:"model"`
-	Messages []schema.Message `json:"messages"`
+	Model             string           `json:"model"`
+	Messages          []schema.Message `json:"messages"`
+	Tools             []schema.Tool    `json:"tools,omitempty"`
+	MaxTokens         int              `json:"max_tokens,omitempty"`
+	Features          *RequestFeatures `json:"-"`
+	DisableSessionPin bool             `json:"-"`
 }
