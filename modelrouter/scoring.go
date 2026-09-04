@@ -28,7 +28,16 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, _ in
 		return "", fmt.Errorf("no available models for group %s", group)
 	}
 
-	if req == nil || len(req.Messages) == 0 {
+	if req == nil {
+		return models[rand.Intn(len(models))], nil
+	}
+	features := requestFeatures(req)
+	turnType := DetectTurnType(features)
+	if turnType != TurnTypeNormal {
+		req.DisableSessionPin = true
+		return selectSpecialModel(models, turnType), nil
+	}
+	if len(req.Messages) == 0 {
 		return models[rand.Intn(len(models))], nil
 	}
 
@@ -53,6 +62,40 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, _ in
 	return models[bestIdx], nil
 }
 
+func requestFeatures(req *ModelSelectRequest) *RequestFeatures {
+	if req == nil {
+		return &RequestFeatures{}
+	}
+	if req.Features == nil {
+		req.Features = ExtractRequestFeatures(req.Messages, req.Tools, req.MaxTokens)
+	}
+	return req.Features
+}
+
+func selectSpecialModel(models []string, turnType TurnType) string {
+	best := models[0]
+	bestScore := specialModelScore(best, turnType)
+	for _, candidate := range models[1:] {
+		score := specialModelScore(candidate, turnType)
+		if score > bestScore || score == bestScore && candidate < best {
+			best, bestScore = candidate, score
+		}
+	}
+	return best
+}
+
+func specialModelScore(name string, turnType TurnType) int {
+	profile := inferModelProfile(name)
+	score := 100 - profile.costTier*20
+	if profile.lightweight {
+		score += 30
+	}
+	if turnType == TurnTypeSubAgent && containsAny(strings.ToLower(name), "coder", "code", "deepseek") {
+		score += 10
+	}
+	return score
+}
+
 func extractPrompt(messages []schema.Message) string {
 	var sb strings.Builder
 	for _, msg := range messages {
@@ -69,21 +112,21 @@ func scoreModels(prompt string, models []string) []float64 {
 	lower := strings.ToLower(prompt)
 
 	categories := map[string][]string{
-		"code":     {"代码", "code", "编程", "函数", "bug", "debug", "实现", "implement", "算法", "algorithm", "refactor", "重构", "编程语言", "syntax"},
+		"code":      {"代码", "code", "编程", "函数", "bug", "debug", "实现", "implement", "算法", "algorithm", "refactor", "重构", "编程语言", "syntax"},
 		"translate": {"翻译", "translate", "translation", "英译中", "中译英", "localize"},
-		"math":     {"数学", "计算", "方程", "证明", "math", "calculate", "equation", "proof", "微积分", "线性代数", "统计"},
-		"reason":   {"推理", "分析", "逻辑", "reason", "analyze", "logic", "为什么", "why", "对比", "compare", "评估", "evaluate"},
-		"creative": {"写", "创作", "故事", "诗", "write", "create", "story", "poem", "文案", "copywriting", "小说", "novel"},
-		"chat":     {"你好", "hello", "hi", "聊天", "chat", "闲聊", "你是谁", "who are you"},
+		"math":      {"数学", "计算", "方程", "证明", "math", "calculate", "equation", "proof", "微积分", "线性代数", "统计"},
+		"reason":    {"推理", "分析", "逻辑", "reason", "analyze", "logic", "为什么", "why", "对比", "compare", "评估", "evaluate"},
+		"creative":  {"写", "创作", "故事", "诗", "write", "create", "story", "poem", "文案", "copywriting", "小说", "novel"},
+		"chat":      {"你好", "hello", "hi", "聊天", "chat", "闲聊", "你是谁", "who are you"},
 	}
 
 	modelPreference := map[string]map[string]float64{
-		"code":     {"deepseek-chat": 3, "gpt-4": 2, "gpt-4o": 2, "claude-3.5-sonnet": 2.5, "deepseek-coder": 3},
+		"code":      {"deepseek-chat": 3, "gpt-4": 2, "gpt-4o": 2, "claude-3.5-sonnet": 2.5, "deepseek-coder": 3},
 		"translate": {"gpt-4": 3, "gpt-4o": 2.5, "claude-3.5-sonnet": 3, "deepseek-chat": 1.5},
-		"math":     {"deepseek-reasoner": 3, "gpt-4": 2.5, "gpt-4o": 2, "o1": 3, "o1-mini": 2.5},
-		"reason":   {"gpt-4": 2.5, "gpt-4o": 2, "claude-3.5-sonnet": 2.5, "deepseek-reasoner": 2.5},
-		"creative": {"gpt-4": 2.5, "gpt-4o": 3, "claude-3.5-sonnet": 2.5, "deepseek-chat": 1.5},
-		"chat":     {"gpt-4o-mini": 3, "gpt-3.5-turbo": 3, "deepseek-chat": 2.5, "gpt-4o": 1.5},
+		"math":      {"deepseek-reasoner": 3, "gpt-4": 2.5, "gpt-4o": 2, "o1": 3, "o1-mini": 2.5},
+		"reason":    {"gpt-4": 2.5, "gpt-4o": 2, "claude-3.5-sonnet": 2.5, "deepseek-reasoner": 2.5},
+		"creative":  {"gpt-4": 2.5, "gpt-4o": 3, "claude-3.5-sonnet": 2.5, "deepseek-chat": 1.5},
+		"chat":      {"gpt-4o-mini": 3, "gpt-3.5-turbo": 3, "deepseek-chat": 2.5, "gpt-4o": 1.5},
 	}
 
 	detectedCategory := ""
@@ -115,4 +158,3 @@ func scoreModels(prompt string, models []string) []float64 {
 	}
 	return scores
 }
-
