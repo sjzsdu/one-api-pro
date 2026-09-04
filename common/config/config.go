@@ -187,3 +187,9 @@ var TestPrompt = env.String("TEST_PROMPT", "Output only your specific model name
 
 var ModelAutoEnabled = env.Bool("MODEL_AUTO_ENABLED", false)
 var ModelRouterStrategy = env.String("MODEL_ROUTER_STRATEGY", "random")
+var ModelFilterEnabled = env.Bool("MODEL_FILTER_ENABLED", true)
+
+var ScorerQualityWeight = env.Float64("SCORER_QUALITY_WEIGHT", 0.4)
+var ScorerCostWeight = env.Float64("SCORER_COST_WEIGHT", 0.3)
+var ScorerSpeedWeight = env.Float64("SCORER_SPEED_WEIGHT", 0.2)
+var ScorerIntentWeight = env.Float64("SCORER_INTENT_WEIGHT", 0.1)
