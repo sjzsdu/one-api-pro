@@ -12,6 +12,25 @@ func (f *StatusFilter) Name() string {
 	return "status"
 }
 
+type ExcludedChannelFilter struct{}
+
+func (f *ExcludedChannelFilter) Name() string {
+	return "excluded_channel"
+}
+
+func (f *ExcludedChannelFilter) Filter(_ context.Context, candidates []*model.Channel, req *RouteRequest) []*model.Channel {
+	if req.ExcludedChannelId <= 0 {
+		return candidates
+	}
+	result := make([]*model.Channel, 0, len(candidates))
+	for _, ch := range candidates {
+		if ch.Id != req.ExcludedChannelId {
+			result = append(result, ch)
+		}
+	}
+	return result
+}
+
 func (f *StatusFilter) Filter(_ context.Context, candidates []*model.Channel, _ *RouteRequest) []*model.Channel {
 	result := make([]*model.Channel, 0, len(candidates))
 	for _, ch := range candidates {

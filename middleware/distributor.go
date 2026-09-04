@@ -15,8 +15,8 @@ import (
 	"github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/modelrouter"
-	schema "github.com/modelbus/one-api-pro/relay/schema"
 	"github.com/modelbus/one-api-pro/relay/registry"
+	schema "github.com/modelbus/one-api-pro/relay/schema"
 )
 
 type ModelRequest struct {
@@ -60,25 +60,27 @@ func Distribute() func(c *gin.Context) {
 			requestModel = c.GetString(ctxkey.RequestModel)
 			if requestModel == "auto" && config.ModelAutoEnabled && modelrouter.DefaultRouter != nil {
 				c.Set(ctxkey.OriginalRequestModel, requestModel)
-				var messages []schema.Message
+				var parsed schema.GeneralOpenAIRequest
 				if body, err := common.GetRequestBody(c); err == nil {
-					var parsed struct {
-						Messages []schema.Message `json:"messages"`
-					}
-					if json.Unmarshal(body, &parsed) == nil {
-						messages = parsed.Messages
-					}
+					_ = json.Unmarshal(body, &parsed)
 				}
-				selected, err := modelrouter.DefaultRouter.SelectModel(ctx, userGroup, userId, &modelrouter.ModelSelectRequest{
-					Model:    requestModel,
-					Messages: messages,
-				})
+				routerRequest := &modelrouter.ModelSelectRequest{
+					Model:     requestModel,
+					Messages:  parsed.Messages,
+					Tools:     parsed.Tools,
+					MaxTokens: parsed.MaxTokens,
+				}
+				selected, err := modelrouter.DefaultRouter.SelectModel(ctx, userGroup, userId, routerRequest)
 				if err != nil {
 					abortWithMessage(c, http.StatusServiceUnavailable, fmt.Sprintf("model auto 路由失败: %s", err.Error()))
 					return
 				}
 				requestModel = selected
 				c.Set(ctxkey.RequestModel, requestModel)
+				c.Set(ctxkey.ModelRouterRequest, routerRequest)
+				if routerRequest.DisableSessionPin {
+					c.Set(ctxkey.DisableSessionPin, true)
+				}
 			}
 			var err error
 			channel, err = selectChannelViaRouter(c, userGroup, requestModel, userId, false)
@@ -95,7 +97,7 @@ func Distribute() func(c *gin.Context) {
 		logger.Debugf(ctx, "user id %d, user group: %s, request model: %s, using channel #%d", userId, userGroup, requestModel, channel.Id)
 
 		sessionKey := ""
-		if config.ChannelStickySessionEnabled && userId > 0 && requestModel != "" {
+		if config.ChannelStickySessionEnabled && !c.GetBool(ctxkey.DisableSessionPin) && userId > 0 && requestModel != "" {
 			sessionKey = channelrouter.MakeSessionKey(userId, requestModel)
 			c.Set(ctxkey.SessionKey, sessionKey)
 		}
@@ -135,7 +137,7 @@ func selectChannelViaRouter(c *gin.Context, group, modelName string, userId int,
 	}
 
 	sessionKey := ""
-	if config.ChannelStickySessionEnabled && userId > 0 && modelName != "" {
+	if config.ChannelStickySessionEnabled && !c.GetBool(ctxkey.DisableSessionPin) && userId > 0 && modelName != "" {
 		sessionKey = channelrouter.MakeSessionKey(userId, modelName)
 	}
 
