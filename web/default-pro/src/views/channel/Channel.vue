@@ -87,7 +87,7 @@
             </div>
 
             <div class="col">
-              <span class="cell-muted ellipsis" :title="c.groups">{{ c.groups || '-' }}</span>
+              <span class="cell-muted ellipsis" :title="c.group">{{ c.group || '-' }}</span>
             </div>
 
             <div class="col">
@@ -185,19 +185,45 @@
           <a-input v-model="form.base_url" placeholder="https://api.openai.com" allow-clear />
         </a-form-item>
         <a-form-item field="models" label="模型">
-          <a-space fill>
-            <a-input v-model="form.models" placeholder="多个模型用逗号分隔" allow-clear />
-            <a-button v-if="form.type === 20 || form.type === 52" :loading="refreshingModels" @click="refreshChannelModels">
-              刷新模型
-            </a-button>
-            <a-button :loading="validatingModels" @click="validateChannelModels">
-              校验模型
-            </a-button>
-          </a-space>
-          <div class="form-hint">可枚举的 Provider 会自动移除不存在的模型；不支持模型目录的 Provider 只能标记为待验证。</div>
+          <div class="model-picker">
+            <div class="model-picker-header">
+              <span class="model-picker-title">
+                {{ visibleModelOptions.length ? `选择模型（已选 ${selectedModels.length} 个）` : '暂未加载模型列表' }}
+              </span>
+              <a-space>
+                <a-button v-if="form.type === 20 || form.type === 52" size="small" :loading="refreshingModels" @click="refreshChannelModels">
+                  刷新模型
+                </a-button>
+                <a-button size="small" :loading="validatingModels" @click="validateChannelModels">
+                  校验模型
+                </a-button>
+              </a-space>
+            </div>
+            <div v-if="visibleModelOptions.length" class="model-options">
+              <a-checkbox
+                v-for="model in visibleModelOptions"
+                :key="model"
+                :model-value="selectedModels.includes(model)"
+                @change="toggleModel(model, $event)"
+              >
+                {{ model }}
+              </a-checkbox>
+            </div>
+            <div v-else class="model-empty">点击“刷新模型”获取 Provider 模型，或手动添加模型。</div>
+            <div class="model-manual">
+              <a-input
+                v-model="manualModels"
+                placeholder="手动添加模型，多个用逗号分隔"
+                allow-clear
+                @press-enter="addManualModels"
+              />
+              <a-button @click="addManualModels">添加</a-button>
+            </div>
+            <div class="form-hint">可枚举的 Provider 会自动过滤不存在的模型；Codex OAuth 等特殊 Provider 会保留为待验证候选。</div>
+          </div>
         </a-form-item>
-        <a-form-item field="groups" label="分组">
-          <a-input v-model="form.groups" placeholder="多个分组用逗号分隔" allow-clear />
+        <a-form-item field="group" label="分组">
+          <a-input v-model="form.group" placeholder="多个分组用逗号分隔" allow-clear />
         </a-form-item>
         <a-form-item field="key" label="密钥" :required="!isEdit">
           <a-input-password v-model="form.key" :placeholder="isEdit ? '留空表示不修改密钥' : 'API Key'" />
@@ -317,6 +343,8 @@ const oauthLoading = ref(false)
 const oauthFlow = ref(null)
 const refreshingModels = ref(false)
 const validatingModels = ref(false)
+const modelOptions = ref([])
+const manualModels = ref('')
 
 const formRef = ref(null)
 const form = reactive({
@@ -324,13 +352,58 @@ const form = reactive({
   name: '',
   base_url: '',
   models: '',
-  groups: '',
+  group: '',
   key: '',
   is_fallback: false,
   fallback_priority: 0,
 })
 
 const modalTitle = ref('添加渠道')
+
+const selectedModels = computed({
+  get: () => parseModelNames(form.models),
+  set: (models) => {
+    form.models = mergeModelNames(models).join(',')
+  },
+})
+
+const visibleModelOptions = computed(() => mergeModelNames(modelOptions.value, selectedModels.value))
+
+function parseModelNames(value) {
+  const values = Array.isArray(value) ? value : String(value || '').split(',')
+  return mergeModelNames(values)
+}
+
+function mergeModelNames(...groups) {
+  const result = []
+  const seen = new Set()
+  groups.flat().forEach((value) => {
+    const model = String(value || '').trim()
+    if (model && !seen.has(model)) {
+      seen.add(model)
+      result.push(model)
+    }
+  })
+  return result
+}
+
+function toggleModel(model, checked) {
+  const selected = new Set(selectedModels.value)
+  if (checked) selected.add(model)
+  else selected.delete(model)
+  selectedModels.value = Array.from(selected)
+}
+
+function addManualModels() {
+  const additions = parseModelNames(manualModels.value)
+  if (!additions.length) {
+    Message.warning('请输入至少一个模型名')
+    return
+  }
+  modelOptions.value = mergeModelNames(modelOptions.value, additions)
+  selectedModels.value = mergeModelNames(selectedModels.value, additions)
+  manualModels.value = ''
+}
 
 const pageItems = computed(() => {
   const start = (activePage.value - 1) * pageSize.value
@@ -415,10 +488,12 @@ function openCreateModal() {
   form.name = ''
   form.base_url = ''
   form.models = ''
-  form.groups = ''
+  form.group = ''
   form.key = ''
   form.is_fallback = false
   form.fallback_priority = 0
+  modelOptions.value = []
+  manualModels.value = ''
   modalTitle.value = '添加渠道'
   modalVisible.value = true
 }
@@ -430,10 +505,15 @@ function openEditModal(record) {
   form.name = record.name || ''
   form.base_url = record.base_url || ''
   form.models = record.models || ''
-  form.groups = record.groups || ''
+  form.group = record.group || ''
   form.key = record.key || ''
   form.is_fallback = !!record.is_fallback
   form.fallback_priority = record.fallback_priority || 0
+  modelOptions.value = parseModelNames(form.models)
+  if (form.type === 52) {
+    modelOptions.value = mergeModelNames(defaultOpenAICodexModels, modelOptions.value)
+  }
+  manualModels.value = ''
   modalTitle.value = '编辑渠道'
   modalVisible.value = true
 }
@@ -453,7 +533,7 @@ async function handleSubmit() {
       name: form.name,
       base_url: form.base_url,
       models: form.models,
-      groups: form.groups,
+      group: form.group,
       key: form.key,
       is_fallback: form.is_fallback,
       fallback_priority: form.fallback_priority,
@@ -493,8 +573,13 @@ async function refreshChannelModels() {
       base_url: form.base_url,
     })
     if (!data.success) throw new Error(data.message || '模型刷新失败')
-    form.models = (data.data?.models || []).join(',')
-    const count = data.data?.models?.length || 0
+    let models = data.data?.models || []
+    if (!models.length && form.type === 52) {
+      models = defaultOpenAICodexModels
+    }
+    modelOptions.value = mergeModelNames(models)
+    form.models = modelOptions.value.join(',')
+    const count = modelOptions.value.length
     if (data.data?.source_url === 'builtin://openaicodex') {
       Message.success(`已加载内置 Codex 模型目录（${count} 个候选模型）`)
     } else {
@@ -532,6 +617,7 @@ async function validateChannelModels() {
     if (result.verification_enabled) {
       const validModels = result.valid_models || []
       const invalidModels = result.invalid_models || []
+      modelOptions.value = mergeModelNames(validModels)
       form.models = validModels.join(',')
       if (invalidModels.length) {
         Message.warning(`已移除 ${invalidModels.length} 个不可用模型：${invalidModels.join(', ')}`)
@@ -567,6 +653,7 @@ async function startOpenAIOAuth() {
       if (flow.status === 'success') {
         form.key = flow.credential || ''
         if (!form.models) form.models = defaultOpenAICodexModels.join(',')
+        modelOptions.value = mergeModelNames(defaultOpenAICodexModels, modelOptions.value, selectedModels.value)
         Message.success('OpenAI OAuth 登录成功，请保存渠道')
         return
       }
@@ -935,6 +1022,59 @@ onMounted(() => {
   font-weight: 500;
   font-size: 13px;
   color: var(--color-text-2);
+}
+.model-picker {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  background: var(--color-fill-1);
+  box-sizing: border-box;
+}
+.model-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.model-picker-title {
+  font-size: 12px;
+  color: var(--color-text-2);
+}
+.model-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: 4px;
+}
+.model-options :deep(.arco-checkbox) {
+  min-width: 0;
+  margin-right: 0;
+}
+.model-options :deep(.arco-checkbox-label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-empty {
+  padding: 16px 10px;
+  color: var(--color-text-3);
+  font-size: 12px;
+  text-align: center;
+}
+.model-manual {
+  display: flex;
+  gap: 8px;
+}
+.model-manual :deep(.arco-input-wrapper) {
+  flex: 1;
 }
 .form-hint {
   margin-left: 12px;

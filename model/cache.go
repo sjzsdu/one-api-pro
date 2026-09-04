@@ -209,17 +209,24 @@ func InitChannelCache() {
 	}
 	newGroup2model2channels := make(map[string]map[string][]*Channel)
 	for group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
 		newGroup2model2channels[group] = make(map[string][]*Channel)
 	}
 	for _, channel := range channels {
-		groups := strings.Split(channel.Group, ",")
-		for _, group := range groups {
-			models := strings.Split(channel.Models, ",")
-			for _, model := range models {
-				if _, ok := newGroup2model2channels[group][model]; !ok {
-					newGroup2model2channels[group][model] = make([]*Channel, 0)
+		for _, group := range uniqueTrimmedValues(strings.Split(channel.Group, ",")) {
+			model2channels, ok := newGroup2model2channels[group]
+			if !ok {
+				model2channels = make(map[string][]*Channel)
+				newGroup2model2channels[group] = model2channels
+			}
+			for _, model := range uniqueTrimmedValues(strings.Split(channel.Models, ",")) {
+				if _, ok := model2channels[model]; !ok {
+					model2channels[model] = make([]*Channel, 0)
 				}
-				newGroup2model2channels[group][model] = append(newGroup2model2channels[group][model], channel)
+				model2channels[model] = append(model2channels[model], channel)
 			}
 		}
 	}
