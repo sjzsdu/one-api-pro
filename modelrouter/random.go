@@ -32,6 +32,15 @@ func (r *RandomModelRouter) SelectModel(ctx context.Context, group string, userI
 		})
 		return "", routeErr
 	}
+	models = filterModelsWithPricing(ctx, models)
+	if len(models) == 0 {
+		routeErr := fmt.Errorf("no models with pricing found for group %s", group)
+		RecordRoutingDecision(ctx, RoutingDecision{
+			Strategy: r.Name(), Group: group, UserID: userID,
+			Reason: "no priced models available", Error: routeErr.Error(), LatencyMs: time.Since(started).Milliseconds(),
+		})
+		return "", routeErr
+	}
 	selected := models[rand.Intn(len(models))]
 	RecordRoutingDecision(ctx, RoutingDecision{
 		Model: selected, Strategy: r.Name(), Group: group, UserID: userID,

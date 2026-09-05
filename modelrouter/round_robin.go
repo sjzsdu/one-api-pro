@@ -34,6 +34,15 @@ func (r *RoundRobinModelRouter) SelectModel(ctx context.Context, group string, u
 		})
 		return "", routeErr
 	}
+	models = filterModelsWithPricing(ctx, models)
+	if len(models) == 0 {
+		routeErr := fmt.Errorf("no models with pricing found for group %s", group)
+		RecordRoutingDecision(ctx, RoutingDecision{
+			Strategy: r.Name(), Group: group, UserID: userID,
+			Reason: "no priced models available", Error: routeErr.Error(), LatencyMs: time.Since(started).Milliseconds(),
+		})
+		return "", routeErr
+	}
 	idx := atomic.AddUint64(&r.counter, 1)
 	selected := models[idx%uint64(len(models))]
 	RecordRoutingDecision(ctx, RoutingDecision{

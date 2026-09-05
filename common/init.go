@@ -45,6 +45,12 @@ func Init() {
 
 	loadEnvFile()
 
+	// Re-read config variables that depend on env values loaded from .env.
+	// Package-level var initializers run before .env is loaded, so env-based
+	// defaults (like MODEL_AUTO_ENABLED) would otherwise stay at their
+	// zero values.
+	config.ReloadConfig()
+
 	if os.Getenv("SESSION_SECRET") != "" {
 		if os.Getenv("SESSION_SECRET") == "random_string" {
 			logger.SysError("SESSION_SECRET is set to an example value, please change it to a random string.")

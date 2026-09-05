@@ -47,3 +47,25 @@ func TestChannelContainsModel(t *testing.T) {
 		})
 	}
 }
+
+func TestChannelContainsModelWildcard(t *testing.T) {
+	ch := &Channel{Models: "*"}
+
+	cases := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"wildcard matches any model", "gpt-4", true},
+		{"wildcard matches gpt-3.5-turbo", "gpt-3.5-turbo", true},
+		{"wildcard matches claude-3", "claude-3", true},
+		{"wildcard matches empty string", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ch.ContainsModel(tc.input); got != tc.want {
+				t.Errorf("ContainsModel(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
+}

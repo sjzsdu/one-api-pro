@@ -187,3 +187,20 @@ var TestPrompt = env.String("TEST_PROMPT", "Output only your specific model name
 
 var ModelAutoEnabled = env.Bool("MODEL_AUTO_ENABLED", false)
 var ModelRouterStrategy = env.String("MODEL_ROUTER_STRATEGY", "random")
+
+// ReloadConfig re-reads env-based config variables.
+// Call this after .env file is loaded to pick up values that were not
+// available at package init time.
+func ReloadConfig() {
+	ModelAutoEnabled = env.Bool("MODEL_AUTO_ENABLED", false)
+	ModelRouterStrategy = env.String("MODEL_ROUTER_STRATEGY", "random")
+	ChannelDefaultCooldownSeconds = env.Int("CHANNEL_DEFAULT_COOLDOWN_SECONDS", 60)
+	ChannelMaxCooldownSeconds = env.Int("CHANNEL_MAX_COOLDOWN_SECONDS", 600)
+	ChannelConcurrencyEnabled = env.Bool("CHANNEL_CONCURRENCY_ENABLED", false)
+	ChannelStickySessionEnabled = env.Bool("CHANNEL_STICKY_SESSION_ENABLED", false)
+	RelayTimeout = env.Int("RELAY_TIMEOUT", 0)
+	SyncFrequency = env.Int("SYNC_FREQUENCY", 10*60)
+	BatchUpdateInterval = env.Int("BATCH_UPDATE_INTERVAL", 5)
+	Theme = env.String("THEME", "default-pro")
+	GeminiVersion = env.String("GEMINI_VERSION", "v1")
+}

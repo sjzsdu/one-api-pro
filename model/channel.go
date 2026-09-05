@@ -137,7 +137,8 @@ func (channel *Channel) ContainsModel(modelName string) bool {
 		return true
 	}
 	for _, m := range strings.Split(channel.Models, ",") {
-		if strings.TrimSpace(m) == modelName {
+		trimmed := strings.TrimSpace(m)
+		if trimmed == "*" || trimmed == modelName {
 			return true
 		}
 	}
