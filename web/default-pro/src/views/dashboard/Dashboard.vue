@@ -53,7 +53,18 @@
         <!-- 趋势图 -->
         <div class="panel">
           <div class="panel-head">
-            <h2 class="panel-title">使用趋势（7天）</h2>
+            <h2 class="panel-title">使用趋势（{{ dateRangeLabel }}）</h2>
+            <div class="date-range-selector">
+              <a-radio-group v-model="dateRange" type="button" size="small" @change="handleDateRangeChange">
+                <a-radio value="7">7天</a-radio>
+                <a-radio value="30">30天</a-radio>
+                <a-radio value="90">90天</a-radio>
+              </a-radio-group>
+              <a-button type="outline" size="small" @click="exportData">
+                <template #icon><icon-download :size="14" /></template>
+                导出
+              </a-button>
+            </div>
           </div>
           <a-row :gutter="12">
             <a-col :xs="24" :sm="8" v-for="t in trendItems" :key="t.field">
@@ -69,11 +80,11 @@
           </a-row>
         </div>
 
-        <!-- 模型分布（7天） -->
+        <!-- 模型分布 -->
         <div class="panel">
           <div class="panel-head">
-            <h2 class="panel-title">模型用量分布（7天）</h2>
-            <span class="panel-extra">Top {{ barModels.length || 0 }} · 近 7 天</span>
+            <h2 class="panel-title">模型用量分布（{{ dateRangeLabel }}）</h2>
+            <span class="panel-extra">Top {{ barModels.length || 0 }}</span>
           </div>
           <v-chart v-if="barModels.length > 0" :option="barOption" :style="{ height: '320px' }" autoresize />
           <div v-else class="chart-empty">暂无数据</div>
@@ -263,7 +274,7 @@ import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import {
   IconCodeSquare, IconSend, IconArchive, IconCalendar, IconCode, IconFile, IconGift,
-  IconCopy, IconLaunch,
+  IconCopy, IconLaunch, IconDownload,
 } from '@arco-design/web-vue/es/icon'
 import VChart from 'vue-echarts'
 import 'echarts'
@@ -287,6 +298,11 @@ const version = ref('')
 const latestApiKey = ref(null)
 const tokenTotal = ref(0)
 const balance = ref(0)
+const dateRange = ref('7')
+const dateRangeLabel = computed(() => {
+  const labels = { '7': '7天', '30': '30天', '90': '90天' }
+  return labels[dateRange.value] || '7天'
+})
 
 const statData = reactive({ total_tokens: 0, total_requests: 0, total_quota: 0 })
 const dailyUsage = ref([])
@@ -553,8 +569,8 @@ const barOption = computed(() => {
 async function loadLogsFallback() {
   try {
     const basePath = authStore.isAdmin ? '/api/log' : '/api/log/self'
-    const startTs = sevenDayRange.value.start
-    const endTs = sevenDayRange.value.end
+    const startTs = dateRangeComputed.value.start
+    const endTs = dateRangeComputed.value.end
     const collected = []
     // 拉前 5 页（每页 10 条，共 50 条），只取近 7 天的消费日志
     for (let p = 0; p < 5; p++) {
@@ -653,19 +669,45 @@ async function loadSubscription() {
   } catch (e) { /* ignore */ }
 }
 
-// 计算「近 7 天」时间范围（对齐后端 SearchLogsByDayAndModel 语义）
-const sevenDayRange = computed(() => {
+// 计算时间范围（对齐后端 SearchLogsByDayAndModel 语义）
+const dateRangeComputed = computed(() => {
   const now = new Date()
   const end = Math.floor(now.getTime() / 1000)
   const startOfDay = Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000)
-  const start = startOfDay - 6 * 86400 // 包含今天共 7 天
+  const days = parseInt(dateRange.value) || 7
+  const start = startOfDay - (days - 1) * 86400 // 包含今天共 days 天
   return { start, end }
 })
+
+function handleDateRangeChange(value) {
+  dateRange.value = value
+  loadDashboard()
+}
+
+function exportData() {
+  const headers = ['模型', '日期', '请求数', '额度消耗', 'Token用量']
+  const rows = details.value.map(d => [
+    d.model_name,
+    d.day,
+    d.request_count,
+    d.quota,
+    d.prompt_tokens + d.completion_tokens
+  ])
+  
+  const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n')
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `usage-report-${dateRange.value}days-${new Date().toISOString().slice(0,10)}.csv`
+  link.click()
+  URL.revokeObjectURL(link.href)
+  Message.success('数据导出成功')
+}
 
 async function loadDashboard() {
   loading.value = true
   try {
-    const { start, end } = sevenDayRange.value
+    const { start, end } = dateRangeComputed.value
     const statEndpoint = authStore.isAdmin ? '/api/log/stat' : '/api/log/self/stat'
     const requests = [
       api.get('/api/user/dashboard', { params: { start, end } }).catch(() => ({ data: { success: true, data: [] } })),
@@ -911,6 +953,13 @@ onMounted(async () => {
   color: rgb(var(--primary-6));
   cursor: pointer;
   text-decoration: none;
+}
+
+/* ============ 日期范围选择器 ============ */
+.date-range-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 /* ============ 核心指标 ============ */
