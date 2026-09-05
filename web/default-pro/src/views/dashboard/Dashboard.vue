@@ -200,25 +200,25 @@
         </div>
 
         <!-- 公告 -->
-        <div class="panel clickable" @click="$router.push('/log')">
+        <div class="panel">
           <div class="panel-head">
             <h2 class="panel-title">系统公告</h2>
-            <span class="panel-link">查看日志 →</span>
+            <router-link class="panel-link" to="/log">查看日志 →</router-link>
           </div>
           <div v-if="notice" class="notice-body" v-html="notice"></div>
           <div v-else class="notice-list">
-            <a class="notice-item" href="#">
+            <div class="notice-item">
               <span class="notice-title">One Api Pro 企业版正式发布</span>
               <span class="notice-time">2026-08-01</span>
-            </a>
-            <a class="notice-item" href="#">
+            </div>
+            <div class="notice-item">
               <span class="notice-title">支持 40+ 模型平台统一接入</span>
               <span class="notice-time">2026-07-25</span>
-            </a>
-            <a class="notice-item" href="#">
+            </div>
+            <div class="notice-item">
               <span class="notice-title">新增订阅套餐与用量管控</span>
               <span class="notice-time">2026-07-15</span>
-            </a>
+            </div>
           </div>
         </div>
 
@@ -1310,9 +1310,6 @@ onMounted(async () => {
 }
 .notice-item:last-child {
   border-bottom: none;
-}
-.notice-item:hover .notice-title {
-  color: rgb(var(--primary-6));
 }
 .notice-title {
   font-size: 13px;

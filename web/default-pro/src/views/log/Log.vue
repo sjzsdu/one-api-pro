@@ -123,7 +123,10 @@
               <div class="col col-num"><span class="cell-num">{{ r.quota || 0 }}</span></div>
             </template>
             <div class="col">
-              <div class="detail-text">{{ r.content }}</div>
+              <a-tooltip v-if="r.content" :content="r.content" position="top">
+                <div class="detail-text" tabindex="0" :aria-label="`日志详情：${r.content}`">{{ r.content }}</div>
+              </a-tooltip>
+              <div v-else class="detail-text">-</div>
               <div class="detail-tags">
                 <a-tag v-if="r.elapsed_time" :color="elapsedColor(r.elapsed_time)" size="small">{{ r.elapsed_time }}ms</a-tag>
                 <a-tag v-if="r.is_stream" color="pink" size="small">Stream</a-tag>
