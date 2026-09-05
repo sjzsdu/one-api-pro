@@ -170,6 +170,7 @@ func SetApiRouter(router *gin.Engine) {
 			orderSelfRoute.GET("/", controller.GetMyOrders)
 			orderSelfRoute.GET("/:id", controller.GetMyOrder)
 			orderSelfRoute.POST("/:id/cancel", controller.CancelMyOrder)
+			orderSelfRoute.POST("/:id/pay", controller.PayMyOrder)
 		}
 		apiRouter.POST("/order/plan", middleware.UserAuth(), controller.CreatePlanOrder)
 		orderAdminRoute := apiRouter.Group("/order")
@@ -186,6 +187,9 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/payment/wechat/notify", controller.WechatNotify)
 		apiRouter.POST("/payment/alipay/notify", controller.AlipayNotify)
 		apiRouter.POST("/payment/mock/notify", middleware.RootAuth(), controller.MockPay)
+		// Public payment-status endpoint so user-facing pages can decide
+		// whether to show the purchase UI.
+		apiRouter.GET("/payment/status", controller.GetPaymentStatus)
 
 		// Settings: payment + plan-operations.
 		settingRoute := apiRouter.Group("/setting")
