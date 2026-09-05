@@ -9,7 +9,7 @@ GO ?= go
 
 GOOS ?= $(shell $(GO) env GOOS)
 GOARCH ?= $(shell $(GO) env GOARCH)
-CGO_ENABLED ?= 0
+CGO_ENABLED ?= 1
 
 VERSION ?= $(shell if [ -f VERSION ]; then tr -d '[:space:]' < VERSION; else git describe --tags --always 2>/dev/null || echo dev; fi)
 LDFLAGS := -s -w -X github.com/modelbus/one-api-pro/common.Version=$(VERSION)

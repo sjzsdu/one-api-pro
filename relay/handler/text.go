@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/modelbus/one-api-pro/common/config"
+	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"github.com/modelbus/one-api-pro/common/logger"
 	dbmodel "github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/relay"
@@ -35,13 +36,29 @@ func RelayTextHelper(c *gin.Context) *model.ErrorWithStatusCode {
 		textRequest.Model = meta.DefaultModel
 	}
 	meta.OriginModelName = textRequest.Model
+	// If the model router resolved "auto" to a concrete model, the resolved
+	// name is already in ctxkey.RequestModel (set by the middleware). Use it
+	// so that pricing and relay use the real model, not the literal "auto".
+	if resolved := c.GetString(ctxkey.RequestModel); resolved != "" && resolved != textRequest.Model {
+		textRequest.Model = resolved
+	}
 	textRequest.Model, _ = getMappedModelName(textRequest.Model, meta.ModelMapping)
 	meta.ActualModelName = textRequest.Model
 	systemPromptReset := setSystemPrompt(ctx, textRequest, meta.ForcedSystemPrompt)
 
 	priceResult, err := billingratio.GetModelPrice(textRequest.Model, meta.OriginModelName)
 	if err != nil {
-		return openai.ErrorWrapper(err, "model_price_not_found", http.StatusUnprocessableEntity)
+		if meta.OriginModelName == "auto" {
+			logger.SysLogf("auto route: no pricing for %s, using default", textRequest.Model)
+			priceResult = &billingratio.PriceResult{
+				InputPrice:  0,
+				OutputPrice: 0,
+				BillingType: dbmodel.BillingTypeToken,
+				Found:       false,
+			}
+		} else {
+			return openai.ErrorWrapper(err, "model_price_not_found", http.StatusUnprocessableEntity)
+		}
 	}
 	groupDiscount := billingratio.GetGroupDiscount(meta.Group, textRequest.Model, meta.OriginModelName)
 

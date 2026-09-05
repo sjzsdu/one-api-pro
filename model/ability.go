@@ -31,11 +31,12 @@ func GetRandomSatisfiedChannel(group string, model string, ignoreFirstPriority b
 
 	var err error = nil
 	var channelQuery *gorm.DB
+	modelCondition := "model = ? OR model = '*'"
 	if ignoreFirstPriority {
-		channelQuery = DB.Where(groupCol+" = ? and model = ? and enabled = "+trueVal, group, model)
+		channelQuery = DB.Where(groupCol+" = ? and ("+modelCondition+") and enabled = "+trueVal, group, model)
 	} else {
-		maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(groupCol+" = ? and model = ? and enabled = "+trueVal, group, model)
-		channelQuery = DB.Where(groupCol+" = ? and model = ? and enabled = "+trueVal+" and priority = (?)", group, model, maxPrioritySubQuery)
+		maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(groupCol+" = ? and ("+modelCondition+") and enabled = "+trueVal, group, model)
+		channelQuery = DB.Where(groupCol+" = ? and ("+modelCondition+") and enabled = "+trueVal+" and priority = (?)", group, model, maxPrioritySubQuery)
 	}
 	if common.UsingSQLite || common.UsingPostgreSQL {
 		err = channelQuery.Order("RANDOM()").First(&ability).Error
@@ -145,7 +146,7 @@ func GetGroupModels(ctx context.Context, group string) ([]string, error) {
 		trueVal = "true"
 	}
 	var models []string
-	err := DB.Model(&Ability{}).Distinct("model").Where(groupCol+" = ? and enabled = "+trueVal, group).Pluck("model", &models).Error
+	err := DB.Model(&Ability{}).Distinct("model").Where(groupCol+" = ? and enabled = "+trueVal+" and model != '*'", group).Pluck("model", &models).Error
 	if err != nil {
 		return nil, err
 	}

@@ -215,18 +215,43 @@ func InitChannelCache() {
 		}
 		newGroup2model2channels[group] = make(map[string][]*Channel)
 	}
+	type wildcardChannel struct {
+		channel *Channel
+		groups  []string
+	}
+	var wildcardChannels []wildcardChannel
 	for _, channel := range channels {
-		for _, group := range uniqueTrimmedValues(strings.Split(channel.Group, ",")) {
+		groups := uniqueTrimmedValues(strings.Split(channel.Group, ","))
+		models := uniqueTrimmedValues(strings.Split(channel.Models, ","))
+		isWildcard := len(models) == 1 && models[0] == "*"
+		if isWildcard {
+			wildcardChannels = append(wildcardChannels, wildcardChannel{channel: channel, groups: groups})
+			continue
+		}
+		for _, group := range groups {
 			model2channels, ok := newGroup2model2channels[group]
 			if !ok {
 				model2channels = make(map[string][]*Channel)
 				newGroup2model2channels[group] = model2channels
 			}
-			for _, model := range uniqueTrimmedValues(strings.Split(channel.Models, ",")) {
+			for _, model := range models {
 				if _, ok := model2channels[model]; !ok {
 					model2channels[model] = make([]*Channel, 0)
 				}
 				model2channels[model] = append(model2channels[model], channel)
+			}
+		}
+	}
+	// Wildcard channels: map to every model that exists in their group
+	for _, wc := range wildcardChannels {
+		for _, group := range wc.groups {
+			model2channels, ok := newGroup2model2channels[group]
+			if !ok {
+				model2channels = make(map[string][]*Channel)
+				newGroup2model2channels[group] = model2channels
+			}
+			for model := range model2channels {
+				model2channels[model] = append(model2channels[model], wc.channel)
 			}
 		}
 	}
@@ -289,7 +314,7 @@ func CacheGetRandomSatisfiedChannel(group string, model string, ignoreFirstPrior
 func GetChannelCandidates(group string, modelName string) []*Channel {
 	if !config.MemoryCacheEnabled {
 		var channels []*Channel
-		err := DB.Where("status = ? AND models LIKE ? AND `group` LIKE ?",
+		err := DB.Where("status = ? AND (models LIKE ? OR models = '*') AND `group` LIKE ?",
 			ChannelStatusEnabled, "%"+modelName+"%", "%"+group+"%").
 			Order("priority DESC").
 			Find(&channels).Error

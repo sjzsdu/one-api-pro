@@ -29,6 +29,10 @@ func (r *EmbeddingModelRouter) SelectModel(ctx context.Context, group string, _ 
 	if err != nil || len(models) == 0 {
 		return "", fmt.Errorf("no available models for group %s", group)
 	}
+	models = filterModelsWithPricing(ctx, models)
+	if len(models) == 0 {
+		return "", fmt.Errorf("no models with pricing found for group %s", group)
+	}
 	if req == nil || len(req.Messages) == 0 {
 		return models[rand.Intn(len(models))], nil
 	}
