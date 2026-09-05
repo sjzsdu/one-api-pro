@@ -208,13 +208,19 @@
     >
       <a-form ref="addFormRef" :model="addForm" :rules="addRules" layout="vertical" class="user-form">
         <a-form-item field="username" label="用户名">
-          <a-input v-model="addForm.username" placeholder="请输入用户名" :max-length="32" allow-clear />
+          <div class="accessible-field" v-accessible-input="{ label: '用户名', required: true }">
+            <a-input v-model="addForm.username" placeholder="请输入用户名" :max-length="32" allow-clear />
+          </div>
         </a-form-item>
         <a-form-item field="display_name" label="显示名称">
-          <a-input v-model="addForm.display_name" placeholder="请输入显示名称" :max-length="64" allow-clear />
+          <div class="accessible-field" v-accessible-input="{ label: '显示名称' }">
+            <a-input v-model="addForm.display_name" placeholder="请输入显示名称" :max-length="64" allow-clear />
+          </div>
         </a-form-item>
         <a-form-item field="password" label="密码">
-          <a-input-password v-model="addForm.password" placeholder="请输入密码" :max-length="64" />
+          <div class="accessible-field" v-accessible-input="{ label: '密码', required: true }">
+            <a-input-password v-model="addForm.password" placeholder="请输入密码" :max-length="64" />
+          </div>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -291,6 +297,15 @@ import { useAuthStore } from '@/stores/auth'
 import api from '@/api'
 
 const authStore = useAuthStore()
+
+const vAccessibleInput = {
+  mounted(el, { value }) {
+    const input = el.matches('input') ? el : el.querySelector('input')
+    if (!input) return
+    input.setAttribute('aria-label', value.label)
+    if (value.required) input.setAttribute('aria-required', 'true')
+  },
+}
 
 const ITEMS_PER_PAGE = 10
 
@@ -1064,4 +1079,5 @@ function renderBilling(type) {
   font-size: 13px;
   color: var(--color-text-2);
 }
+.accessible-field { width: 100%; }
 </style>
