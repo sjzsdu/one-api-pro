@@ -38,6 +38,7 @@ type ClusterMatch struct {
 	Similarity float64 `json:"similarity"`
 }
 
+
 // RoutingDecision is the complete, queryable explanation for one model-routing
 // attempt. Strategies which do not use a field leave it at its zero value.
 type RoutingDecision struct {

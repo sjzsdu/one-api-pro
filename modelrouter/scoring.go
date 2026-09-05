@@ -54,7 +54,8 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 		selected := selectSpecialModel(models, turnType)
 		RecordRoutingDecision(ctx, RoutingDecision{
 			Model: selected, Strategy: r.Name(), Group: group, UserID: userID,
-			Candidates: models, Reason: fmt.Sprintf("special turn type: %s", turnType), LatencyMs: time.Since(started).Milliseconds(),
+			TurnType: turnType, Candidates: models,
+			Reason: fmt.Sprintf("special turn type: %s", turnType), LatencyMs: time.Since(started).Milliseconds(),
 		})
 		return selected, nil
 	}
@@ -141,7 +142,6 @@ func specialModelScore(name string, turnType TurnType) int {
 	}
 	return score
 }
-
 
 func extractPrompt(messages []schema.Message) string {
 	var sb strings.Builder
