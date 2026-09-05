@@ -54,5 +54,6 @@ const (
 	OpenAICompatible
 	GeminiOpenAICompatible
 	OpenAICodexOAuth
+	Kimi
 	Dummy
 )

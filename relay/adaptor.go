@@ -26,6 +26,7 @@ import (
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/gemini"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/geminiv2"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/groq"
+	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/kimi"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/lingyiwanwu"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/minimax"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/mistral"
