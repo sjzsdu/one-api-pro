@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/config"
@@ -161,8 +162,19 @@ func InitDB() {
 	if err = InitDefaultPrices(); err != nil {
 		appLogger.SysError("failed to initialize default prices: " + err.Error())
 	}
-	InitModelPriceCache()
-	InitGroupPriceCache()
+
+	// Parallel cache initialization for faster startup
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		InitModelPriceCache()
+	}()
+	go func() {
+		defer wg.Done()
+		InitGroupPriceCache()
+	}()
+	wg.Wait()
 }
 
 func migrateDB() error {
