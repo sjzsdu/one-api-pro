@@ -6,12 +6,16 @@
     </div>
 
     <!-- Tabs (按状态过滤) -->
-    <div class="tabs">
+    <div class="tabs" role="tablist" aria-label="按订单状态筛选">
       <button
         v-for="tab in tabs"
         :key="tab.value"
         class="tab"
         :class="{ active: activeTab === tab.value }"
+        role="tab"
+        :aria-selected="activeTab === tab.value"
+        :tabindex="activeTab === tab.value ? 0 : -1"
+        :aria-controls="'orders-panel'"
         @click="activeTab = tab.value; loadOrders()"
       >
         {{ tab.label }}
@@ -20,7 +24,7 @@
 
     <!-- Table -->
     <a-spin :loading="loading" dot tip="加载中..." class="orders-spin">
-    <div class="table-wrap">
+    <div id="orders-panel" class="table-wrap" role="tabpanel">
       <table class="data-table">
         <thead>
           <tr>

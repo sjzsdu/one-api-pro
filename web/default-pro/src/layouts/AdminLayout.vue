@@ -14,55 +14,57 @@
         v-model:selected-keys="selectedKeys"
         @menu-item-click="handleMenuClick"
         class="sidebar-menu"
+        role="menu"
+        aria-label="主导航"
       >
-        <a-menu-item key="/dashboard">
+        <a-menu-item key="/dashboard" role="menuitem" tabindex="0" :aria-current="route.path === '/dashboard' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/dashboard')">
           <template #icon><icon-dashboard /></template>
           {{ $t('menu.dashboard') }}
         </a-menu-item>
-        <a-menu-item key="/chat" v-if="chatLink">
+        <a-menu-item key="/chat" v-if="chatLink" role="menuitem" tabindex="0" :aria-current="route.path === '/chat' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/chat')">
           <template #icon><icon-message /></template>
           {{ $t('menu.chat') }}
         </a-menu-item>
-        <a-menu-item key="/token">
+        <a-menu-item key="/token" role="menuitem" tabindex="0" :aria-current="route.path === '/token' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/token')">
           <template #icon><icon-code /></template>
           {{ $t('menu.token') }}
         </a-menu-item>
-        <a-menu-item key="/redeem">
+        <a-menu-item key="/redeem" role="menuitem" tabindex="0" :aria-current="route.path === '/redeem' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/redeem')">
           <template #icon><icon-gift /></template>
           兑换
         </a-menu-item>
-        <a-menu-item key="/plans">
+        <a-menu-item key="/plans" role="menuitem" tabindex="0" :aria-current="route.path === '/plans' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/plans')">
           <template #icon><icon-gift /></template>
           套餐
         </a-menu-item>
-        <a-menu-item key="/orders">
+        <a-menu-item key="/orders" role="menuitem" tabindex="0" :aria-current="route.path === '/orders' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/orders')">
           <template #icon><icon-storage /></template>
           订单
         </a-menu-item>
-        <a-menu-item key="/log">
+        <a-menu-item key="/log" role="menuitem" tabindex="0" :aria-current="route.path === '/log' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/log')">
           <template #icon><icon-file /></template>
           {{ $t('menu.log') }}
         </a-menu-item>
 
         <template v-if="authStore.isAdmin">
           <div class="menu-divider" />
-          <a-menu-item key="/channel">
+          <a-menu-item key="/channel" role="menuitem" tabindex="0" :aria-current="route.path === '/channel' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/channel')">
             <template #icon><icon-apps /></template>
             {{ $t('menu.channel') }}
           </a-menu-item>
-          <a-menu-item key="/redemption">
+          <a-menu-item key="/redemption" role="menuitem" tabindex="0" :aria-current="route.path === '/redemption' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/redemption')">
             <template #icon><icon-gift /></template>
             {{ $t('menu.redemption') }}
           </a-menu-item>
-          <a-menu-item key="/user">
+          <a-menu-item key="/user" role="menuitem" tabindex="0" :aria-current="route.path === '/user' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/user')">
             <template #icon><icon-user-group /></template>
             {{ $t('menu.user') }}
           </a-menu-item>
-          <a-menu-item key="/subscription">
+          <a-menu-item key="/subscription" role="menuitem" tabindex="0" :aria-current="route.path === '/subscription' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/subscription')">
             <template #icon><icon-calendar /></template>
             {{ $t('menu.subscription') }}
           </a-menu-item>
-          <a-menu-item key="/setting">
+          <a-menu-item key="/setting" role="menuitem" tabindex="0" :aria-current="route.path.startsWith('/setting') ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/setting')">
             <template #icon><icon-settings /></template>
             {{ $t('menu.setting') }}
           </a-menu-item>
@@ -83,12 +85,14 @@
             <a-option value="zh">中文</a-option>
             <a-option value="en">English</a-option>
           </a-select>
-          <a-dropdown trigger="hover" position="br">
-            <a-space class="user-trigger">
+          <a-dropdown trigger="click" position="br">
+            <button type="button" class="user-trigger" aria-label="打开用户菜单" aria-haspopup="menu">
+              <a-space>
               <span class="username">{{ authStore.user?.username }}</span>
               <a-tag :color="roleColor" size="small">{{ roleText }}</a-tag>
               <icon-down style="font-size:12px;color:var(--color-text-3)" />
-            </a-space>
+              </a-space>
+            </button>
             <template #content>
               <a-doption @click="showProfile = true">
                 <template #icon><icon-user /></template>
@@ -185,6 +189,23 @@ const roleText = computed(() => {
 const roleColor = computed(() => authStore.isRoot ? 'orangered' : authStore.isAdmin ? 'arcoblue' : 'gray')
 
 const handleMenuClick = (key) => { router.push(key) }
+const handleMenuKeydown = (event, key) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    router.push(key)
+    return
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const items = [...event.currentTarget.closest('[role="menu"]').querySelectorAll('[role="menuitem"]')]
+  const currentIndex = items.indexOf(event.currentTarget)
+  const nextIndex = event.key === 'Home'
+    ? 0
+    : event.key === 'End'
+      ? items.length - 1
+      : (currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+  items[nextIndex]?.focus()
+}
 const changeLang = (val) => { locale.value = val; localStorage.setItem('lang', val) }
 const handleLogout = async () => { await authStore.logout(); router.push('/login') }
 
@@ -271,8 +292,9 @@ watch(() => route.path, (path) => { selectedKeys.value = [path] })
 .navbar-left { display: flex; align-items: center; }
 .navbar-right { display: flex; align-items: center; gap: 12px; }
 .username { color: var(--color-text-2); font-size: 14px; }
-.user-trigger { cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+.user-trigger { cursor: pointer; padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; font: inherit; }
 .user-trigger:hover { background: var(--color-fill-2); }
+.user-trigger:focus-visible { outline: 2px solid rgb(var(--primary-6)); outline-offset: 2px; }
 
 .content-area { padding: 20px; overflow-y: auto; min-width: 0; overflow-x: hidden; }
 

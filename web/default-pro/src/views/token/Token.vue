@@ -181,7 +181,9 @@
     >
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical" class="token-form">
         <a-form-item field="name" label="名称" required>
-          <a-input v-model="form.name" placeholder="例如：生产环境、测试脚本" :max-length="50" allow-clear />
+          <div class="accessible-field" v-accessible-input="{ label: '名称', required: true }">
+            <a-input v-model="form.name" placeholder="例如：生产环境、测试脚本" :max-length="50" allow-clear />
+          </div>
         </a-form-item>
 
         <a-form-item
@@ -189,46 +191,56 @@
           label="可用模型"
           :extra="availableModels.length ? '留空表示不限制当前分组模型，选择「所有模型(*)」表示允许全部模型' : '当前分组暂无已启用模型，请先配置渠道'"
         >
-          <a-select
-            v-model="form.models"
-            :placeholder="availableModels.length ? '选择可用模型' : '当前分组暂无模型'"
-            multiple
-            allow-clear
-            allow-search
-          >
-            <a-option key="*" value="*" label="所有模型 (*)" />
-            <a-option v-for="m in availableModels" :key="m" :value="m" :label="m" />
-          </a-select>
+          <div class="accessible-field" v-accessible-input="{ label: '可用模型' }">
+            <a-select
+              v-model="form.models"
+              :placeholder="availableModels.length ? '选择可用模型' : '当前分组暂无模型'"
+              multiple
+              allow-clear
+              allow-search
+            >
+              <a-option key="*" value="*" label="所有模型 (*)" />
+              <a-option v-for="m in availableModels" :key="m" :value="m" :label="m" />
+            </a-select>
+          </div>
         </a-form-item>
 
         <a-form-item field="subnet" label="IP 白名单" extra="CIDR 格式，多个用逗号分隔。留空表示不限制">
-          <a-input v-model="form.subnet" placeholder="192.168.1.0/24, 10.0.0.0/8" allow-clear />
+          <div class="accessible-field" v-accessible-input="{ label: 'IP 白名单' }">
+            <a-input v-model="form.subnet" placeholder="192.168.1.0/24, 10.0.0.0/8" allow-clear />
+          </div>
         </a-form-item>
 
         <a-form-item field="expired_time" label="过期时间" extra="留空表示永不过期">
-          <a-date-picker
-            v-model="form.expired_time"
-            show-time
-            format="YYYY-MM-DD HH:mm:ss"
-            placeholder="选择过期时间"
-            style="width: 100%"
-            value-format="timestamp"
-          />
+          <div class="accessible-field" v-accessible-input="{ label: '过期时间' }">
+            <a-date-picker
+              v-model="form.expired_time"
+              show-time
+              format="YYYY-MM-DD HH:mm:ss"
+              placeholder="选择过期时间"
+              style="width: 100%"
+              value-format="timestamp"
+            />
+          </div>
         </a-form-item>
 
         <a-form-item field="remain_quota" label="额度限制">
-          <a-input-number
-            v-model="form.remain_quota"
-            :min="-1"
-            :precision="0"
-            placeholder="500000"
-            :disabled="form.unlimited_quota"
-            style="width: 100%"
-          />
+          <div class="accessible-field" v-accessible-input="{ label: '额度限制' }">
+            <a-input-number
+              v-model="form.remain_quota"
+              :min="-1"
+              :precision="0"
+              placeholder="500000"
+              :disabled="form.unlimited_quota"
+              style="width: 100%"
+            />
+          </div>
         </a-form-item>
 
         <a-form-item field="unlimited_quota">
-          <a-checkbox v-model="form.unlimited_quota">不限制额度</a-checkbox>
+          <div class="accessible-field" v-accessible-input="{ label: '不限制额度' }">
+            <a-checkbox v-model="form.unlimited_quota">不限制额度</a-checkbox>
+          </div>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -291,11 +303,21 @@ import { useStatusStore } from '@/stores/status'
 
 const statusStore = useStatusStore()
 
+const vAccessibleInput = {
+  mounted(el, { value }) {
+    const input = el.matches('input') ? el : el.querySelector('input')
+    if (!input) return
+    input.setAttribute('aria-label', value.label)
+    if (value.required) input.setAttribute('aria-required', 'true')
+  },
+}
+
 const loading = ref(false)
 const loadingMore = ref(false)
 const isReachedEnd = ref(false)
 const submitting = ref(false)
 const tokens = ref([])
+const total = computed(() => tokens.value.length)
 const keyword = ref('')
 const activePage = ref(1)
 const pageSize = ref(10)
@@ -980,6 +1002,7 @@ onMounted(async () => {
   font-size: 13px;
   color: var(--color-text-2);
 }
+.accessible-field { width: 100%; }
 
 /* ============ 使用指南 ============ */
 .guide-tabs :deep(.arco-tabs-nav) {
