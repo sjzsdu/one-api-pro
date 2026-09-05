@@ -187,7 +187,7 @@
         <a-form-item
           field="models"
           label="可用模型"
-          :extra="availableModels.length ? '留空表示不限制当前分组模型' : '当前分组暂无已启用模型，请先配置渠道'"
+          :extra="availableModels.length ? '留空表示不限制当前分组模型，选择「所有模型(*)」表示允许全部模型' : '当前分组暂无已启用模型，请先配置渠道'"
         >
           <a-select
             v-model="form.models"
@@ -196,6 +196,7 @@
             allow-clear
             allow-search
           >
+            <a-option key="*" value="*" label="所有模型 (*)" />
             <a-option v-for="m in availableModels" :key="m" :value="m" :label="m" />
           </a-select>
         </a-form-item>
@@ -546,7 +547,7 @@ async function handleSubmit() {
   try {
     const payload = {
       name: form.name,
-      models: form.models.length ? form.models.join(',') : '',
+      models: form.models.includes('*') ? '*' : (form.models.length ? form.models.join(',') : ''),
       subnet: form.subnet,
       expired_time: form.expired_time ? Math.floor(form.expired_time / 1000) : 0,
       remain_quota: form.unlimited_quota ? -1 : form.remain_quota,
