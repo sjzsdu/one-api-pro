@@ -4,25 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sync"
-	"time"
-
-<<<<<<< HEAD
-=======
-	"github.com/gin-gonic/gin"
-	"github.com/modelbus/one-api-pro/common/client"
-	"github.com/modelbus/one-api-pro/common/config"
-	"github.com/modelbus/one-api-pro/common/helper"
-	"github.com/modelbus/one-api-pro/common/logger"
-	"github.com/modelbus/one-api-pro/common/openaioauth"
-	"github.com/modelbus/one-api-pro/model"
-	"github.com/modelbus/one-api-pro/relay/adaptor/openaicodex"
-	"github.com/modelbus/one-api-pro/relay/channeltype"
-	"github.com/modelbus/one-api-pro/relay/registry"
->>>>>>> sjzsdu/master
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/modelbus/one-api-pro/common/client"

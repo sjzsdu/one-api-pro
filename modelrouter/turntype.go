@@ -36,16 +36,16 @@ func (t TurnType) String() string {
 // RequestFeatures contains routing-relevant facts extracted from a request.
 // The explicit flags let callers avoid relying on prompt heuristics.
 type RequestFeatures struct {
-	Prompt             string
-	SystemPrompt       string
-	EstimatedTokens    int
-	MaxOutputTokens    int
-	HasImages          bool
-	HasTools           bool
-	HasToolResult      bool
-	CompressionRequest bool
-	SubAgentRequest    bool
-	TitleRequest       bool
+	Prompt             string `json:"-"`
+	SystemPrompt       string `json:"-"`
+	EstimatedTokens    int    `json:"estimated_tokens,omitempty"`
+	MaxOutputTokens    int    `json:"max_output_tokens,omitempty"`
+	HasImages          bool   `json:"has_images,omitempty"`
+	HasTools           bool   `json:"has_tools,omitempty"`
+	HasToolResult      bool   `json:"has_tool_result,omitempty"`
+	CompressionRequest bool   `json:"compression_request,omitempty"`
+	SubAgentRequest    bool   `json:"sub_agent_request,omitempty"`
+	TitleRequest       bool   `json:"title_request,omitempty"`
 }
 
 // ExtractRequestFeatures normalizes the OpenAI-compatible request fields used

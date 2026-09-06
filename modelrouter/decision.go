@@ -5,40 +5,6 @@ import (
 	"time"
 )
 
-// TurnType describes requests that need routing behavior different from a
-// normal user turn. The detector is implemented by the special-turn router.
-type TurnType int
-
-const (
-	TurnTypeNormal TurnType = iota
-	TurnTypeCompression
-	TurnTypeSubAgent
-	TurnTypeToolResult
-	TurnTypeTitleGen
-)
-
-// RequestFeatures contains facts extracted by special-turn and capability
-// filters. Raw prompts are intentionally excluded from decision JSON.
-type RequestFeatures struct {
-	Prompt             string `json:"-"`
-	SystemPrompt       string `json:"-"`
-	EstimatedTokens    int    `json:"estimated_tokens,omitempty"`
-	MaxOutputTokens    int    `json:"max_output_tokens,omitempty"`
-	HasImages          bool   `json:"has_images,omitempty"`
-	HasTools           bool   `json:"has_tools,omitempty"`
-	HasToolResult      bool   `json:"has_tool_result,omitempty"`
-	CompressionRequest bool   `json:"compression_request,omitempty"`
-	SubAgentRequest    bool   `json:"sub_agent_request,omitempty"`
-	TitleRequest       bool   `json:"title_request,omitempty"`
-}
-
-// ClusterMatch records one semantic cluster considered by an embedding router.
-type ClusterMatch struct {
-	Cluster    int     `json:"cluster"`
-	Similarity float64 `json:"similarity"`
-}
-
-
 // RoutingDecision is the complete, queryable explanation for one model-routing
 // attempt. Strategies which do not use a field leave it at its zero value.
 type RoutingDecision struct {
