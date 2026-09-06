@@ -129,6 +129,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			modelRouterRoute.GET("/decisions", controller.GetRoutingDecisions)
 		}
+		apiRouter.POST("/model_router/quiz", middleware.UserAuth(), controller.ModelRouterQuiz)
 		modelPriceRoute := apiRouter.Group("/model_price")
 		modelPriceRoute.Use(middleware.RootAuth())
 		{
