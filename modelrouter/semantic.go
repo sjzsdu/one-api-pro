@@ -75,7 +75,31 @@ func newEmbeddingScorerFromEnv() (*EmbeddingScorer, error) {
 	case "api":
 		embedder = api
 	case "onnx":
-		tokenizer, tokenizerErr := NewHuggingFaceTokenizer(os.Getenv("EMBEDDING_TOKENIZER_PATH"))
+		// Resolve model and tokenizer paths: prefer explicit env vars, auto-download if missing
+		modelPath := os.Getenv("EMBEDDING_MODEL_PATH")
+		tokenizerPath := os.Getenv("EMBEDDING_TOKENIZER_PATH")
+		if modelPath == "" || tokenizerPath == "" {
+			// Auto-download: use ModelDownloader to fetch files
+			downloader := NewModelDownloader(
+				os.Getenv("EMBEDDING_CACHE_DIR"),
+				os.Getenv("EMBEDDING_MODEL_BASE_URL"),
+			)
+			downloadedModel, downloadedTokenizer, dlErr := downloader.ResolveModelFiles(modelName)
+			if dlErr != nil {
+				if api.Endpoint == "" {
+					return nil, fmt.Errorf("auto-download embedding model: %w (set EMBEDDING_MODEL_PATH and EMBEDDING_TOKENIZER_PATH manually, or configure EMBEDDING_MODEL_BASE_URL)", dlErr)
+				}
+				embedder = api
+				break
+			}
+			if modelPath == "" {
+				modelPath = downloadedModel
+			}
+			if tokenizerPath == "" {
+				tokenizerPath = downloadedTokenizer
+			}
+		}
+		tokenizer, tokenizerErr := NewHuggingFaceTokenizer(tokenizerPath)
 		if tokenizerErr != nil {
 			if api.Endpoint == "" {
 				return nil, tokenizerErr
@@ -84,7 +108,7 @@ func newEmbeddingScorerFromEnv() (*EmbeddingScorer, error) {
 			break
 		}
 		local, localErr := NewONNXEmbedder(ONNXEmbedderConfig{
-			ModelPath: os.Getenv("EMBEDDING_MODEL_PATH"), RuntimeLibrary: os.Getenv("ONNXRUNTIME_LIBRARY"),
+			ModelPath: modelPath, RuntimeLibrary: os.Getenv("ONNXRUNTIME_LIBRARY"),
 			Model: modelName, Dimension: dimension, Tokenizer: tokenizer,
 		})
 		if localErr != nil {
