@@ -155,16 +155,24 @@ func extractPrompt(messages []schema.Message) string {
 }
 
 func scoreModels(prompt string, models []string) []float64 {
+	_, scores := scoreModelsWithCategory(prompt, models)
+	return scores
+}
+
+func scoreModelsWithCategory(prompt string, models []string) (string, []float64) {
 	scores := make([]float64, len(models))
 	lower := strings.ToLower(prompt)
 
-	categories := map[string][]string{
-		"code":      {"代码", "code", "编程", "函数", "bug", "debug", "实现", "implement", "算法", "algorithm", "refactor", "重构", "编程语言", "syntax"},
-		"translate": {"翻译", "translate", "translation", "英译中", "中译英", "localize"},
-		"math":      {"数学", "计算", "方程", "证明", "math", "calculate", "equation", "proof", "微积分", "线性代数", "统计"},
-		"reason":    {"推理", "分析", "逻辑", "reason", "analyze", "logic", "为什么", "why", "对比", "compare", "评估", "evaluate"},
-		"creative":  {"写", "创作", "故事", "诗", "write", "create", "story", "poem", "文案", "copywriting", "小说", "novel"},
-		"chat":      {"你好", "hello", "hi", "聊天", "chat", "闲聊", "你是谁", "who are you"},
+	categories := []struct {
+		name     string
+		keywords []string
+	}{
+		{"code", []string{"代码", "code", "编程", "函数", "bug", "debug", "实现", "implement", "算法", "algorithm", "refactor", "重构", "编程语言", "syntax"}},
+		{"translate", []string{"翻译", "translate", "translation", "英译中", "中译英", "localize"}},
+		{"math", []string{"数学", "计算", "方程", "证明", "math", "calculate", "equation", "proof", "微积分", "线性代数", "统计"}},
+		{"reason", []string{"推理", "分析", "逻辑", "reason", "analyze", "logic", "为什么", "why", "对比", "compare", "评估", "evaluate"}},
+		{"creative", []string{"写", "创作", "故事", "诗", "write", "create", "story", "poem", "文案", "copywriting", "小说", "novel"}},
+		{"chat", []string{"你好", "hello", "hi", "聊天", "chat", "闲聊", "你是谁", "who are you"}},
 	}
 
 	modelPreference := map[string]map[string]float64{
@@ -178,21 +186,21 @@ func scoreModels(prompt string, models []string) []float64 {
 
 	detectedCategory := ""
 	maxHits := 0
-	for cat, keywords := range categories {
+	for _, category := range categories {
 		hits := 0
-		for _, kw := range keywords {
+		for _, kw := range category.keywords {
 			if strings.Contains(lower, kw) {
 				hits++
 			}
 		}
 		if hits > maxHits {
 			maxHits = hits
-			detectedCategory = cat
+			detectedCategory = category.name
 		}
 	}
 
 	if detectedCategory == "" {
-		return scores
+		return "", scores
 	}
 
 	prefs := modelPreference[detectedCategory]
@@ -203,5 +211,5 @@ func scoreModels(prompt string, models []string) []float64 {
 			scores[i] = 0.5
 		}
 	}
-	return scores
+	return detectedCategory, scores
 }
