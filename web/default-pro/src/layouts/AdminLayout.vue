@@ -25,6 +25,10 @@
           <template #icon><icon-message /></template>
           {{ $t('menu.chat') }}
         </a-menu-item>
+        <a-menu-item key="/model-quiz" role="menuitem" tabindex="0" :aria-current="route.path === '/model-quiz' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/model-quiz')">
+          <template #icon><icon-experiment /></template>
+          模型测验
+        </a-menu-item>
         <a-menu-item key="/token" role="menuitem" tabindex="0" :aria-current="route.path === '/token' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/token')">
           <template #icon><icon-code /></template>
           {{ $t('menu.token') }}
@@ -155,7 +159,7 @@ import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useStatusStore } from '@/stores/status'
-import { IconDashboard, IconMessage, IconApps, IconCode, IconGift, IconArchive, IconUserGroup, IconCalendar, IconFile, IconSettings, IconExport, IconUser, IconDown, IconStorage } from '@arco-design/web-vue/es/icon'
+import { IconDashboard, IconMessage, IconApps, IconCode, IconGift, IconArchive, IconUserGroup, IconCalendar, IconFile, IconSettings, IconExport, IconUser, IconDown, IconStorage, IconExperiment } from '@arco-design/web-vue/es/icon'
 import api from '@/api'
 import logoPng from '@/assets/logo.png'
 

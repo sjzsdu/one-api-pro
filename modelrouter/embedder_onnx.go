@@ -200,6 +200,11 @@ func applyEmbeddingPreset(cfg *ONNXEmbedderConfig) {
 			cfg.Dimension = 768
 		case "qwen3-embedding", "qwen3-embedding-0.6b":
 			cfg.Dimension = 1024
+		default:
+			// Check ModelRegistry for dimension
+			if info, ok := ModelRegistry[strings.ToLower(cfg.Model)]; ok {
+				cfg.Dimension = info.Dimension
+			}
 		}
 	}
 }
