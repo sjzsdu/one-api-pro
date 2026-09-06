@@ -15,6 +15,7 @@ const (
 	downloadTimeout     = 5 * time.Minute
 	defaultCacheDir     = ".embedding_cache"
 	modelFilePermission = 0644
+	modelDirPermission  = 0755
 )
 
 // ModelFile represents a downloadable model file.
@@ -79,6 +80,7 @@ func NewModelDownloader(cacheDir, baseURL string) *ModelDownloader {
 			cacheDir = filepath.Join(".", defaultCacheDir)
 		}
 	}
+	cacheDir = expandHomeDir(cacheDir)
 	return &ModelDownloader{
 		cacheDir:    cacheDir,
 		baseURL:     strings.TrimRight(baseURL, "/"),
@@ -91,7 +93,17 @@ func NewModelDownloader(cacheDir, baseURL string) *ModelDownloader {
 // them if necessary. If the model is not in the registry and baseURL is set,
 // it constructs URLs from baseURL/<model>/<filename>.
 func (d *ModelDownloader) ResolveModelFiles(modelName string) (modelPath, tokenizerPath string, err error) {
+	return d.ResolveModelFilesTo(modelName, "", "")
+}
+
+// ResolveModelFilesTo resolves a model's files into the requested paths. Empty
+// paths use the normal cache location. Missing parent directories and files are
+// created automatically, including for explicitly configured paths.
+func (d *ModelDownloader) ResolveModelFilesTo(modelName, modelPath, tokenizerPath string) (string, string, error) {
 	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	if modelName == "" {
+		return "", "", fmt.Errorf("embedding model name is required")
+	}
 
 	info, ok := ModelRegistry[modelName]
 	if !ok && d.baseURL == "" {
@@ -100,24 +112,35 @@ func (d *ModelDownloader) ResolveModelFiles(modelName string) (modelPath, tokeni
 
 	// Build file list: either from registry or from baseURL convention
 	var files []ModelFile
-	if ok {
+	if ok && d.baseURL == "" {
 		files = info.Files
 	} else {
-		// Convention: baseURL/<model>/model.onnx and baseURL/<model>/tokenizer.json
+		// Convention: baseURL/<model>/model.onnx and baseURL/<model>/tokenizer.json.
+		// A configured base URL intentionally overrides built-in registry URLs.
 		files = []ModelFile{
 			{Filename: "model.onnx", URL: d.baseURL + "/" + modelName + "/model.onnx"},
 			{Filename: "tokenizer.json", URL: d.baseURL + "/" + modelName + "/tokenizer.json"},
 		}
 	}
 
-	// Ensure cache directory exists
+	modelPath = expandHomeDir(strings.TrimSpace(modelPath))
+	tokenizerPath = expandHomeDir(strings.TrimSpace(tokenizerPath))
 	modelDir := filepath.Join(d.cacheDir, modelName)
-	if err := os.MkdirAll(modelDir, os.ModePerm); err != nil {
-		return "", "", fmt.Errorf("create cache directory: %w", err)
-	}
 
 	for _, f := range files {
-		localPath := filepath.Join(modelDir, f.Filename)
+		localPath := ""
+		switch f.Filename {
+		case "model.onnx":
+			localPath = modelPath
+		case "tokenizer.json":
+			localPath = tokenizerPath
+		}
+		if localPath == "" {
+			localPath = filepath.Join(modelDir, f.Filename)
+		}
+		if err := os.MkdirAll(filepath.Dir(localPath), modelDirPermission); err != nil {
+			return "", "", fmt.Errorf("create directory for %s: %w", localPath, err)
+		}
 		if err := d.ensureFile(localPath, f.URL); err != nil {
 			return "", "", err
 		}
@@ -135,6 +158,20 @@ func (d *ModelDownloader) ResolveModelFiles(modelName string) (modelPath, tokeni
 		return "", "", fmt.Errorf("tokenizer.json not found for %q", modelName)
 	}
 	return modelPath, tokenizerPath, nil
+}
+
+func expandHomeDir(path string) string {
+	if path == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home
+		}
+	}
+	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
 }
 
 // ensureFile checks if the file exists locally and downloads it if not.
@@ -172,9 +209,6 @@ func (d *ModelDownloader) ensureFile(localPath, url string) error {
 
 // downloadFile downloads a URL to a local path using atomic write (write to tmp, then rename).
 func (d *ModelDownloader) downloadFile(localPath, url string) error {
-	tmpPath := localPath + ".tmp.download"
-	defer os.Remove(tmpPath)
-
 	resp, err := d.client.Get(url)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", url, err)
@@ -185,14 +219,18 @@ func (d *ModelDownloader) downloadFile(localPath, url string) error {
 		return fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
 	}
 
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, modelFilePermission)
+	f, err := os.CreateTemp(filepath.Dir(localPath), ".embedding-download-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
+	tmpPath := f.Name()
 	defer func() {
 		f.Close()
 		os.Remove(tmpPath) // cleanup on error path
 	}()
+	if err := f.Chmod(modelFilePermission); err != nil {
+		return fmt.Errorf("set temp file permissions: %w", err)
+	}
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		return fmt.Errorf("write model file: %w", err)

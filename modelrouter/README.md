@@ -3,17 +3,21 @@
 Set `MODEL_ROUTER_STRATEGY=embedding` to enable semantic routing. The default
 router remains `random`.
 
-Local ONNX configuration:
+Local ONNX configuration only requires the model name. Model and tokenizer
+files are downloaded on first use, and missing cache directories are created
+automatically:
 
 ```env
 EMBEDDING_PROVIDER=onnx
 EMBEDDING_MODEL=jina-v2-code
-EMBEDDING_MODEL_PATH=/models/model.onnx
-EMBEDDING_TOKENIZER_PATH=/models/tokenizer.json
-ONNXRUNTIME_LIBRARY=/opt/onnxruntime/lib/libonnxruntime.so
 CLUSTER_TOPP=4
 ARTIFACTS_PATH=./modelrouter/artifacts
 ```
+
+`EMBEDDING_CACHE_DIR`, `EMBEDDING_MODEL_PATH`,
+`EMBEDDING_TOKENIZER_PATH`, and `ONNXRUNTIME_LIBRARY` are optional advanced
+settings. When explicit model/tokenizer paths do not exist, their parent
+directories are created and the files are downloaded there automatically.
 
 Both Jina v2 Code's WordPiece and Qwen3's BPE are loaded from HuggingFace
 `tokenizer.json` files. A lightweight `WordPieceTokenizer` and the extensible
