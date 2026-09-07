@@ -75,16 +75,16 @@ func newEmbeddingScorerFromEnv() (*EmbeddingScorer, error) {
 	case "api":
 		embedder = api
 	case "onnx":
-		// Resolve model and tokenizer paths: prefer explicit env vars, auto-download if missing
-		modelPath := os.Getenv("EMBEDDING_MODEL_PATH")
-		tokenizerPath := os.Getenv("EMBEDDING_TOKENIZER_PATH")
-		if modelPath == "" || tokenizerPath == "" {
-			// Auto-download: use ModelDownloader to fetch files
+		// Explicit paths remain supported, but are treated as download targets when
+		// absent so optional advanced configuration cannot block first startup.
+		modelPath := expandHomeDir(strings.TrimSpace(os.Getenv("EMBEDDING_MODEL_PATH")))
+		tokenizerPath := expandHomeDir(strings.TrimSpace(os.Getenv("EMBEDDING_TOKENIZER_PATH")))
+		if !isNonEmptyFile(modelPath) || !isNonEmptyFile(tokenizerPath) {
 			downloader := NewModelDownloader(
 				os.Getenv("EMBEDDING_CACHE_DIR"),
 				os.Getenv("EMBEDDING_MODEL_BASE_URL"),
 			)
-			downloadedModel, downloadedTokenizer, dlErr := downloader.ResolveModelFiles(modelName)
+			downloadedModel, downloadedTokenizer, dlErr := downloader.ResolveModelFilesTo(modelName, modelPath, tokenizerPath)
 			if dlErr != nil {
 				if api.Endpoint == "" {
 					return nil, fmt.Errorf("auto-download embedding model: %w (set EMBEDDING_MODEL_PATH and EMBEDDING_TOKENIZER_PATH manually, or configure EMBEDDING_MODEL_BASE_URL)", dlErr)
@@ -92,12 +92,8 @@ func newEmbeddingScorerFromEnv() (*EmbeddingScorer, error) {
 				embedder = api
 				break
 			}
-			if modelPath == "" {
-				modelPath = downloadedModel
-			}
-			if tokenizerPath == "" {
-				tokenizerPath = downloadedTokenizer
-			}
+			modelPath = downloadedModel
+			tokenizerPath = downloadedTokenizer
 		}
 		tokenizer, tokenizerErr := NewHuggingFaceTokenizer(tokenizerPath)
 		if tokenizerErr != nil {
@@ -129,6 +125,14 @@ func newEmbeddingScorerFromEnv() (*EmbeddingScorer, error) {
 		return nil, fmt.Errorf("CLUSTER_TOPP must be a positive integer")
 	}
 	return NewEmbeddingScorer(embedder, artifacts, topP)
+}
+
+func isNonEmptyFile(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	info, err := os.Stat(expandHomeDir(path))
+	return err == nil && !info.IsDir() && info.Size() > 0
 }
 
 func envOrDefault(name, fallback string) string {
