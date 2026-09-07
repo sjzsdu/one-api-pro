@@ -94,8 +94,11 @@ func (r *ScoringModelRouter) SelectFallbackModel(ctx context.Context, group, fai
 	if turnType := DetectTurnType(features); turnType != TurnTypeNormal {
 		return selectSpecialModel(candidates, turnType), decision, nil
 	}
+
+	profileProvider := NewHybridProfileProvider()
+	modelProfiles := profileProvider.GetProfiles(ctx, candidates)
 	prompt := features.Prompt
-	scores := scoreModels(prompt, candidates)
+	scores := scoreModelsDynamic(prompt, candidates, modelProfiles)
 	best := candidates[0]
 	bestScore := scores[0]
 	for i := 1; i < len(candidates); i++ {
@@ -130,6 +133,23 @@ func filterFallbackModels(models []string, failedModel string, features *Request
 	}
 	sort.Strings(result)
 	return result
+}
+
+type FallbackEvent struct {
+	FailedModel   string           `json:"failed_model"`
+	SelectedModel string           `json:"selected_model,omitempty"`
+	StatusCode    int              `json:"status_code"`
+	Decision      FallbackDecision `json:"decision"`
+	Outcome       string           `json:"outcome"`
+}
+
+func LogFallbackEvent(ctx context.Context, event FallbackEvent) {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		logger.Warnf(ctx, "model_router_fallback marshal_error=%q", err.Error())
+		return
+	}
+	logger.Infof(ctx, "model_router_fallback %s", payload)
 }
 
 type modelProfile struct {
@@ -168,21 +188,4 @@ func inferModelProfile(name string) modelProfile {
 		p.contextWindow = 1000000
 	}
 	return p
-}
-
-type FallbackEvent struct {
-	FailedModel   string           `json:"failed_model"`
-	SelectedModel string           `json:"selected_model,omitempty"`
-	StatusCode    int              `json:"status_code"`
-	Decision      FallbackDecision `json:"decision"`
-	Outcome       string           `json:"outcome"`
-}
-
-func LogFallbackEvent(ctx context.Context, event FallbackEvent) {
-	payload, err := json.Marshal(event)
-	if err != nil {
-		logger.Warnf(ctx, "model_router_fallback marshal_error=%q", err.Error())
-		return
-	}
-	logger.Infof(ctx, "model_router_fallback %s", payload)
 }

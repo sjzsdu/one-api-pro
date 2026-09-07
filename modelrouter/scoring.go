@@ -68,11 +68,20 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 		return r.recordFallback(ctx, group, userID, models, started, "request contains no user prompt"), nil
 	}
 
-	scores := scoreModels(prompt, models)
-	candidateScores := make(map[string]float64, len(models))
-	for i, candidate := range models {
+	profileProvider := NewHybridProfileProvider()
+	modelProfiles := profileProvider.GetProfiles(ctx, models)
+	candidates := filterByCapabilities(models, modelProfiles, features)
+
+	if len(candidates) == 0 {
+		candidates = models
+	}
+
+	scores := scoreModelsDynamic(prompt, candidates, modelProfiles)
+	candidateScores := make(map[string]float64, len(candidates))
+	for i, candidate := range candidates {
 		candidateScores[candidate] = scores[i]
 	}
+
 	bestIdx := 0
 	bestScore := scores[0]
 	for i, s := range scores {
@@ -83,19 +92,19 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 	}
 
 	if bestScore == 0 {
-		selected := models[rand.Intn(len(models))]
+		selected := candidates[rand.Intn(len(candidates))]
 		RecordRoutingDecision(ctx, RoutingDecision{
 			Model: selected, Strategy: r.Name(), Group: group, UserID: userID,
-			Candidates: models, CandidateScores: candidateScores,
-			Reason: "keyword scoring produced no match; random fallback", LatencyMs: time.Since(started).Milliseconds(),
+			Candidates: candidates, CandidateScores: candidateScores,
+			Reason: "dynamic scoring produced no match; random fallback", LatencyMs: time.Since(started).Milliseconds(),
 		})
 		return selected, nil
 	}
-	selected := models[bestIdx]
+	selected := candidates[bestIdx]
 	RecordRoutingDecision(ctx, RoutingDecision{
-		Model: selected, Score: bestScore, Scores: map[string]float64{"keyword": bestScore},
-		Strategy: r.Name(), Group: group, UserID: userID, Candidates: models, CandidateScores: candidateScores,
-		Reason: "highest keyword-category score", LatencyMs: time.Since(started).Milliseconds(),
+		Model: selected, Score: bestScore, Scores: map[string]float64{"dynamic": bestScore},
+		Strategy: r.Name(), Group: group, UserID: userID, Candidates: candidates, CandidateScores: candidateScores,
+		Reason: "highest dynamic score", LatencyMs: time.Since(started).Milliseconds(),
 	})
 	return selected, nil
 }
@@ -154,9 +163,38 @@ func extractPrompt(messages []schema.Message) string {
 	return strings.TrimSpace(sb.String())
 }
 
-func scoreModels(prompt string, models []string) []float64 {
+// scoreModelsDynamic scores models using profile-based heuristics.
+// No hardcoded model names — scoring uses cost tier, capability flags, and name patterns.
+func scoreModelsDynamic(prompt string, models []string, profiles map[string]*ModelProfile) []float64 {
 	scores := make([]float64, len(models))
 	lower := strings.ToLower(prompt)
+
+	categoryWeights := detectCategory(lower)
+
+	for i, m := range models {
+		profile, ok := profiles[m]
+		if !ok {
+			scores[i] = 0.5
+			continue
+		}
+
+		score := computeModelScore(profile, categoryWeights)
+		scores[i] = score
+	}
+	return scores
+}
+
+type categoryWeights struct {
+	code      float64
+	translate float64
+	math      float64
+	reason    float64
+	creative  float64
+	chat      float64
+}
+
+func detectCategory(lower string) categoryWeights {
+	var w categoryWeights
 
 	categories := map[string][]string{
 		"code":      {"代码", "code", "编程", "函数", "bug", "debug", "实现", "implement", "算法", "algorithm", "refactor", "重构", "编程语言", "syntax"},
@@ -167,41 +205,70 @@ func scoreModels(prompt string, models []string) []float64 {
 		"chat":      {"你好", "hello", "hi", "聊天", "chat", "闲聊", "你是谁", "who are you"},
 	}
 
-	modelPreference := map[string]map[string]float64{
-		"code":      {"deepseek-chat": 3, "gpt-4": 2, "gpt-4o": 2, "claude-3.5-sonnet": 2.5, "deepseek-coder": 3},
-		"translate": {"gpt-4": 3, "gpt-4o": 2.5, "claude-3.5-sonnet": 3, "deepseek-chat": 1.5},
-		"math":      {"deepseek-reasoner": 3, "gpt-4": 2.5, "gpt-4o": 2, "o1": 3, "o1-mini": 2.5},
-		"reason":    {"gpt-4": 2.5, "gpt-4o": 2, "claude-3.5-sonnet": 2.5, "deepseek-reasoner": 2.5},
-		"creative":  {"gpt-4": 2.5, "gpt-4o": 3, "claude-3.5-sonnet": 2.5, "deepseek-chat": 1.5},
-		"chat":      {"gpt-4o-mini": 3, "gpt-3.5-turbo": 3, "deepseek-chat": 2.5, "gpt-4o": 1.5},
-	}
-
-	detectedCategory := ""
-	maxHits := 0
+	hits := map[string]int{}
 	for cat, keywords := range categories {
-		hits := 0
 		for _, kw := range keywords {
 			if strings.Contains(lower, kw) {
-				hits++
+				hits[cat]++
 			}
 		}
-		if hits > maxHits {
-			maxHits = hits
-			detectedCategory = cat
+	}
+
+	if hits["code"] > 0 {
+		w.code = float64(hits["code"])
+	}
+	if hits["translate"] > 0 {
+		w.translate = float64(hits["translate"])
+	}
+	if hits["math"] > 0 {
+		w.math = float64(hits["math"])
+	}
+	if hits["reason"] > 0 {
+		w.reason = float64(hits["reason"])
+	}
+	if hits["creative"] > 0 {
+		w.creative = float64(hits["creative"])
+	}
+	if hits["chat"] > 0 {
+		w.chat = float64(hits["chat"])
+	}
+
+	return w
+}
+
+func computeModelScore(profile *ModelProfile, w categoryWeights) float64 {
+	score := 1.0
+
+	if w.code > 0 || w.math > 0 || w.reason > 0 {
+		if profile.Tools {
+			score += 0.3
+		}
+		if profile.CostTier >= 3 {
+			score += 0.2
 		}
 	}
 
-	if detectedCategory == "" {
-		return scores
-	}
-
-	prefs := modelPreference[detectedCategory]
-	for i, m := range models {
-		if score, ok := prefs[m]; ok {
-			scores[i] = score
-		} else {
-			scores[i] = 0.5
+	if w.translate > 0 || w.creative > 0 {
+		if profile.Vision {
+			score += 0.1
+		}
+		if profile.CostTier >= 2 {
+			score += 0.15
 		}
 	}
-	return scores
+
+	if w.chat > 0 {
+		if profile.Lightweight {
+			score += 0.3
+		}
+		if profile.CostTier <= 1 {
+			score += 0.2
+		}
+	}
+
+	if profile.Confidence < 0.5 {
+		score *= 0.8
+	}
+
+	return score
 }
