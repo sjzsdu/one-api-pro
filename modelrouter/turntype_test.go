@@ -50,8 +50,13 @@ func TestExtractRequestFeatures(t *testing.T) {
 }
 
 func TestSpecialModelSelectionPrefersLowCost(t *testing.T) {
-	models := []string{"gpt-4", "gpt-4o-mini", "claude-3-opus"}
-	if got := selectSpecialModel(models, TurnTypeCompression); got != "gpt-4o-mini" {
-		t.Fatalf("selectSpecialModel() = %q, want gpt-4o-mini", got)
+	expensive, cheap := 10.0, .1
+	models := []string{"expensive", "cheap"}
+	profiles := map[string]ModelProfile{
+		"expensive": {Model: "expensive", InputCost: &expensive, OutputCost: &expensive, Confidence: 1},
+		"cheap":     {Model: "cheap", InputCost: &cheap, OutputCost: &cheap, Confidence: 1},
+	}
+	if got := ScoreModelProfiles("", models, profiles, "economy").Selected; got != "cheap" {
+		t.Fatalf("economy scoring selected %q, want cheap", got)
 	}
 }

@@ -41,19 +41,7 @@ func GetRoutingDecisions(c *gin.Context) {
 type QuizRequest struct {
 	Prompt   string `json:"prompt" binding:"required"`
 	Strategy string `json:"strategy,omitempty"` // optional: override strategy
-}
-
-// QuizResponse is the response for the model routing quiz.
-type QuizResponse struct {
-	Prompt            string             `json:"prompt"`
-	DetectedCategory  string             `json:"detected_category"`
-	SelectedModel     string             `json:"selected_model"`
-	ModelScores       map[string]float64 `json:"model_scores"`
-	Reason            string             `json:"reason"`
-	AvailableModels   []string           `json:"available_models"`
-	FilteredOutModels []string           `json:"filtered_out_models"`
-	Strategy          string             `json:"strategy"`
-	TurnType          string             `json:"turn_type"`
+	Group    string `json:"group,omitempty"`
 }
 
 // ModelRouterQuiz simulates model routing without making real LLM calls.
@@ -83,8 +71,15 @@ func ModelRouterQuiz(c *gin.Context) {
 		strategy = "scoring" // default to scoring for quiz
 	}
 
-	// Simulate the routing decision using the scoring logic
-	result := modelrouter.SimulateRouting(req.Prompt, strategy)
+	group := strings.TrimSpace(req.Group)
+	if group == "" {
+		group = "default"
+	}
+	result, err := modelrouter.SimulateRouting(c.Request.Context(), group, req.Prompt, strategy)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

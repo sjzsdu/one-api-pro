@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/modelbus/one-api-pro/common/logger"
-	"github.com/modelbus/one-api-pro/model"
 )
 
 type FailureKind string
@@ -77,97 +75,30 @@ func ClassifyFailure(failure FallbackFailure, features *RequestFeatures) Fallbac
 }
 
 func (r *ScoringModelRouter) SelectFallbackModel(ctx context.Context, group, failedModel string, request *ModelSelectRequest, failure FallbackFailure) (string, FallbackDecision, error) {
-	models, err := model.CacheGetGroupModels(ctx, group)
-	if err != nil || len(models) == 0 {
-		return "", FallbackDecision{}, fmt.Errorf("no available models for group %s", group)
-	}
 	features := requestFeatures(request)
 	decision := ClassifyFailure(failure, features)
 	if !decision.SwitchModel {
 		return "", decision, fmt.Errorf("failure %s does not permit model fallback", decision.Kind)
 	}
-
-	candidates := filterFallbackModels(models, failedModel, features, decision)
-	if len(candidates) == 0 {
+	candidates, err := ResolveCandidates(ctx, group, features)
+	if err != nil {
+		return "", decision, err
+	}
+	remaining := make([]string, 0, len(candidates.Models))
+	for _, candidate := range candidates.Models {
+		if !strings.EqualFold(candidate, failedModel) {
+			remaining = append(remaining, candidate)
+		}
+	}
+	if len(remaining) == 0 {
 		return "", decision, fmt.Errorf("no compatible fallback model for %s", failedModel)
 	}
-	if turnType := DetectTurnType(features); turnType != TurnTypeNormal {
-		return selectSpecialModel(candidates, turnType), decision, nil
+	policy := "balanced"
+	if DetectTurnType(features) != TurnTypeNormal {
+		policy = "economy"
 	}
-	prompt := features.Prompt
-	scores := scoreModels(prompt, candidates)
-	best := candidates[0]
-	bestScore := scores[0]
-	for i := 1; i < len(candidates); i++ {
-		if scores[i] > bestScore {
-			best, bestScore = candidates[i], scores[i]
-		}
-	}
-	return best, decision, nil
-}
-
-func filterFallbackModels(models []string, failedModel string, features *RequestFeatures, decision FallbackDecision) []string {
-	result := make([]string, 0, len(models))
-	neededContext := 0
-	if features != nil {
-		neededContext = features.EstimatedTokens
-	}
-	for _, candidate := range models {
-		if strings.EqualFold(candidate, failedModel) {
-			continue
-		}
-		profile := inferModelProfile(candidate)
-		if decision.RequireLargerContext && profile.contextWindow > 0 && profile.contextWindow < neededContext {
-			continue
-		}
-		if decision.RequireVision && !profile.vision {
-			continue
-		}
-		if decision.RequireTools && !profile.tools {
-			continue
-		}
-		result = append(result, candidate)
-	}
-	sort.Strings(result)
-	return result
-}
-
-type modelProfile struct {
-	costTier      int
-	lightweight   bool
-	contextWindow int
-	vision        bool
-	tools         bool
-}
-
-func inferModelProfile(name string) modelProfile {
-	lower := strings.ToLower(name)
-	p := modelProfile{costTier: 2, contextWindow: 128000, vision: true, tools: true}
-	if containsAny(lower, "mini", "nano", "flash", "haiku", "turbo", "3.5", "small", "lite") {
-		p.costTier, p.lightweight = 1, true
-	}
-	if !p.lightweight && containsAny(lower, "gpt-4", "opus", "sonnet", "o1", "o3", "reasoner", "max") {
-		p.costTier = 3
-	}
-	if containsAny(lower, "embedding", "rerank", "moderation") {
-		p.vision, p.tools = false, false
-	}
-	if containsAny(lower, "coder", "deepseek-reasoner", "o1-mini") {
-		p.vision = false
-	}
-	if containsAny(lower, "gpt-3.5", "claude-2") {
-		p.contextWindow = 16000
-	}
-	if containsAny(lower, "32k") {
-		p.contextWindow = 32000
-	}
-	if containsAny(lower, "200k", "claude-3") {
-		p.contextWindow = 200000
-	}
-	if containsAny(lower, "1m", "gemini-1.5", "gemini-2") {
-		p.contextWindow = 1000000
-	}
-	return p
+	result := ScoreModelProfiles(features.Prompt, remaining, candidates.Profiles, policy)
+	return result.Selected, decision, nil
 }
 
 type FallbackEvent struct {

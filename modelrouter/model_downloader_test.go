@@ -64,6 +64,16 @@ func TestResolveModelFilesKeepsExistingFile(t *testing.T) {
 	require.Equal(t, "existing", string(contents))
 }
 
+func TestLoadEmbeddingManifestSupportsNewModelWithoutCodeChange(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	data := `{"models":{"brand-new":{"dimension":384,"files":[{"filename":"model.onnx","url":"https://example.com/model.onnx"},{"filename":"tokenizer.json","url":"https://example.com/tokenizer.json"}]}}}`
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o600))
+	manifest, err := LoadEmbeddingManifest(path)
+	require.NoError(t, err)
+	require.Equal(t, 384, manifest.Models["brand-new"].Dimension)
+	require.Len(t, manifest.Models["brand-new"].Files, 2)
+}
+
 func newModelFileServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

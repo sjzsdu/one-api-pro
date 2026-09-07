@@ -1,6 +1,21 @@
 package modelrouter
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
+
+type staticProfileProvider map[string]ModelProfile
+
+func (p staticProfileProvider) Profiles(_ context.Context, names []string) (map[string]ModelProfile, error) {
+	result := make(map[string]ModelProfile, len(names))
+	for _, name := range names {
+		if profile, ok := p[name]; ok {
+			result[name] = profile
+		}
+	}
+	return result, nil
+}
 
 func TestClassifyFailure(t *testing.T) {
 	tests := []struct {
@@ -32,18 +47,32 @@ func TestClassifyFailure(t *testing.T) {
 
 func TestCapabilityFallbackFiltersIncompatibleModels(t *testing.T) {
 	features := &RequestFeatures{HasImages: true, HasTools: true}
-	decision := ClassifyFailure(FallbackFailure{StatusCode: 400, Message: "tools are not supported"}, features)
-	got := filterFallbackModels([]string{"failed", "text-embedding-3-small", "deepseek-coder", "gpt-4o-mini"}, "failed", features, decision)
-	if len(got) != 1 || got[0] != "gpt-4o-mini" {
-		t.Fatalf("filterFallbackModels() = %v, want [gpt-4o-mini]", got)
+	provider := staticProfileProvider{
+		"text-only": {Model: "text-only", Vision: CapabilityUnsupported, Tools: CapabilitySupported},
+		"no-tools":  {Model: "no-tools", Vision: CapabilitySupported, Tools: CapabilityUnsupported},
+		"unknown":   {Model: "unknown", Vision: CapabilityUnknown, Tools: CapabilityUnknown},
+	}
+	got, err := resolveCandidateNames(context.Background(), []string{"text-only", "no-tools", "unknown"}, features, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Models) != 1 || got.Models[0] != "unknown" {
+		t.Fatalf("resolveCandidateNames() = %v, want [unknown]", got.Models)
 	}
 }
 
 func TestContextFallbackRequiresLargeEnoughWindow(t *testing.T) {
 	features := &RequestFeatures{EstimatedTokens: 100000}
-	decision := ClassifyFailure(FallbackFailure{StatusCode: 400, Message: "maximum context length exceeded"}, features)
-	got := filterFallbackModels([]string{"failed", "gpt-3.5-turbo", "gpt-4o", "gemini-2-flash"}, "failed", features, decision)
-	if len(got) != 2 || got[0] != "gemini-2-flash" || got[1] != "gpt-4o" {
-		t.Fatalf("filterFallbackModels() = %v", got)
+	provider := staticProfileProvider{
+		"small":   {Model: "small", ContextWindow: 16000},
+		"large":   {Model: "large", ContextWindow: 200000},
+		"unknown": {Model: "unknown"},
+	}
+	got, err := resolveCandidateNames(context.Background(), []string{"small", "large", "unknown"}, features, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Models) != 2 || got.Models[0] != "large" || got.Models[1] != "unknown" {
+		t.Fatalf("resolveCandidateNames() = %v", got.Models)
 	}
 }

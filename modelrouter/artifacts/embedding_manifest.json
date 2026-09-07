@@ -1,0 +1,32 @@
+{
+  "models": {
+    "jina-v2-code": {
+      "dimension": 768,
+      "files": [
+        {"filename": "model.onnx", "url": "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/model.onnx"},
+        {"filename": "tokenizer.json", "url": "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/tokenizer.json"}
+      ]
+    },
+    "jina-embeddings-v2-base-code": {
+      "dimension": 768,
+      "files": [
+        {"filename": "model.onnx", "url": "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/model.onnx"},
+        {"filename": "tokenizer.json", "url": "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/tokenizer.json"}
+      ]
+    },
+    "qwen3-embedding": {
+      "dimension": 1024,
+      "files": [
+        {"filename": "model.onnx", "url": "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/model.onnx"},
+        {"filename": "tokenizer.json", "url": "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/tokenizer.json"}
+      ]
+    },
+    "qwen3-embedding-0.6b": {
+      "dimension": 1024,
+      "files": [
+        {"filename": "model.onnx", "url": "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/model.onnx"},
+        {"filename": "tokenizer.json", "url": "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/tokenizer.json"}
+      ]
+    }
+  }
+}

@@ -24,46 +24,12 @@ type ModelFile struct {
 	URL      string
 }
 
-// ModelRegistry maps model names to their downloadable files.
-// Users can extend this via EMBEDDING_MODEL_BASE_URL or by adding entries.
-var ModelRegistry = map[string]struct {
-	Dimension int
-	Files     []ModelFile
-}{
-	"jina-v2-code": {
-		Dimension: 768,
-		Files: []ModelFile{
-			{Filename: "model.onnx", URL: "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/model.onnx"},
-			{Filename: "tokenizer.json", URL: "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/tokenizer.json"},
-		},
-	},
-	"jina-embeddings-v2-base-code": {
-		Dimension: 768,
-		Files: []ModelFile{
-			{Filename: "model.onnx", URL: "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/model.onnx"},
-			{Filename: "tokenizer.json", URL: "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/tokenizer.json"},
-		},
-	},
-	"qwen3-embedding": {
-		Dimension: 1024,
-		Files: []ModelFile{
-			{Filename: "model.onnx", URL: "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/model.onnx"},
-			{Filename: "tokenizer.json", URL: "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/tokenizer.json"},
-		},
-	},
-	"qwen3-embedding-0.6b": {
-		Dimension: 1024,
-		Files: []ModelFile{
-			{Filename: "model.onnx", URL: "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/model.onnx"},
-			{Filename: "tokenizer.json", URL: "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/tokenizer.json"},
-		},
-	},
-}
-
 // ModelDownloader handles downloading and caching ONNX model files.
 type ModelDownloader struct {
 	cacheDir    string
 	baseURL     string
+	manifest    *EmbeddingManifest
+	manifestErr error
 	client      *http.Client
 	mu          sync.Mutex
 	downloading map[string]chan struct{}
@@ -71,7 +37,7 @@ type ModelDownloader struct {
 
 // NewModelDownloader creates a downloader with the given cache directory.
 // If cacheDir is empty, it defaults to $HOME/.embedding_cache or ./embedding_cache.
-// If baseURL is non-empty, it overrides the registry URLs by prepending the base path.
+// If baseURL is non-empty, it overrides manifest URLs by prepending the base path.
 func NewModelDownloader(cacheDir, baseURL string) *ModelDownloader {
 	if cacheDir == "" {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -81,16 +47,19 @@ func NewModelDownloader(cacheDir, baseURL string) *ModelDownloader {
 		}
 	}
 	cacheDir = expandHomeDir(cacheDir)
+	manifest, manifestErr := LoadEmbeddingManifest(os.Getenv("EMBEDDING_MANIFEST_PATH"))
 	return &ModelDownloader{
 		cacheDir:    cacheDir,
 		baseURL:     strings.TrimRight(baseURL, "/"),
+		manifest:    manifest,
+		manifestErr: manifestErr,
 		client:      &http.Client{Timeout: downloadTimeout},
 		downloading: make(map[string]chan struct{}),
 	}
 }
 
 // ResolveModelFiles returns the local paths for a model's files, downloading
-// them if necessary. If the model is not in the registry and baseURL is set,
+// them if necessary. If the model is not in the manifest and baseURL is set,
 // it constructs URLs from baseURL/<model>/<filename>.
 func (d *ModelDownloader) ResolveModelFiles(modelName string) (modelPath, tokenizerPath string, err error) {
 	return d.ResolveModelFilesTo(modelName, "", "")
@@ -104,19 +73,26 @@ func (d *ModelDownloader) ResolveModelFilesTo(modelName, modelPath, tokenizerPat
 	if modelName == "" {
 		return "", "", fmt.Errorf("embedding model name is required")
 	}
-
-	info, ok := ModelRegistry[modelName]
-	if !ok && d.baseURL == "" {
-		return "", "", fmt.Errorf("model %q not found in registry and no EMBEDDING_MODEL_BASE_URL set", modelName)
+	if d.manifestErr != nil && d.baseURL == "" {
+		return "", "", d.manifestErr
 	}
 
-	// Build file list: either from registry or from baseURL convention
+	var info EmbeddingModelManifest
+	var ok bool
+	if d.manifest != nil {
+		info, ok = d.manifest.Models[modelName]
+	}
+	if !ok && d.baseURL == "" {
+		return "", "", fmt.Errorf("model %q not found in embedding manifest and no EMBEDDING_MODEL_BASE_URL set", modelName)
+	}
+
+	// Build the file list from the manifest or the base URL convention.
 	var files []ModelFile
 	if ok && d.baseURL == "" {
 		files = info.Files
 	} else {
 		// Convention: baseURL/<model>/model.onnx and baseURL/<model>/tokenizer.json.
-		// A configured base URL intentionally overrides built-in registry URLs.
+		// A configured base URL intentionally overrides manifest URLs.
 		files = []ModelFile{
 			{Filename: "model.onnx", URL: d.baseURL + "/" + modelName + "/model.onnx"},
 			{Filename: "tokenizer.json", URL: d.baseURL + "/" + modelName + "/tokenizer.json"},
@@ -253,7 +229,10 @@ func (d *ModelDownloader) IsModelCached(modelName string) bool {
 	modelName = strings.ToLower(strings.TrimSpace(modelName))
 	modelDir := filepath.Join(d.cacheDir, modelName)
 
-	info, ok := ModelRegistry[modelName]
+	if d.manifest == nil {
+		return false
+	}
+	info, ok := d.manifest.Models[modelName]
 	if !ok {
 		return false
 	}

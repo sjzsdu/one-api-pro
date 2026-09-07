@@ -78,25 +78,33 @@ func (s *EmbeddingScorer) Score(ctx context.Context, prompt string, models []str
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("embedding does not match artifact dimensions")
 	}
+	costs := make(map[string]*float64, len(models))
+	latencies := make(map[string]*float64, len(models))
+	for _, name := range models {
+		if metadata, ok := s.Artifacts.Models[name]; ok {
+			cost, latency := metadata.Cost, metadata.Latency
+			costs[name], latencies[name] = &cost, &latency
+		}
+	}
+	costScores := normalizeLowerIsBetter(models, costs)
+	latencyScores := normalizeLowerIsBetter(models, latencies)
 	scores := make(map[string]float64, len(models))
 	for _, model := range models {
-		qualities := s.Artifacts.QualityMeans[model]
-		var quality, weight float64
-		for _, match := range matches {
-			if match.Cluster < len(qualities) {
-				w := match.Similarity
-				if w < 0 {
-					w = 0
+		quality := .5
+		if qualities, known := s.Artifacts.QualityMeans[model]; known {
+			var weighted, weight float64
+			for _, match := range matches {
+				if match.Cluster < len(qualities) {
+					w := max(0, match.Similarity)
+					weighted += qualities[match.Cluster] * w
+					weight += w
 				}
-				quality += qualities[match.Cluster] * w
-				weight += w
+			}
+			if weight > 0 {
+				quality = weighted / weight
 			}
 		}
-		if weight > 0 {
-			quality /= weight
-		}
-		meta := s.Artifacts.Models[model]
-		scores[model] = s.QualityWeight*quality - s.CostWeight*meta.Cost - s.SpeedWeight*meta.Latency
+		scores[model] = s.QualityWeight*quality + s.CostWeight*costScores[model] + s.SpeedWeight*latencyScores[model]
 	}
 	return scores, nil
 }

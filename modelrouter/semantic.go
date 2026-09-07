@@ -3,13 +3,10 @@ package modelrouter
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/modelbus/one-api-pro/model"
 )
 
 func init() {
@@ -25,20 +22,21 @@ type EmbeddingModelRouter struct {
 func (r *EmbeddingModelRouter) Name() string { return "embedding" }
 
 func (r *EmbeddingModelRouter) SelectModel(ctx context.Context, group string, _ int, req *ModelSelectRequest) (string, error) {
-	models, err := model.CacheGetGroupModels(ctx, group)
-	if err != nil || len(models) == 0 {
-		return "", fmt.Errorf("no available models for group %s", group)
+	features := requestFeatures(req)
+	candidates, err := ResolveCandidates(ctx, group, features)
+	if err != nil || len(candidates.Models) == 0 {
+		if err != nil {
+			return "", err
+		}
+		return "", fmt.Errorf("no compatible models for group %s", group)
 	}
-	models = filterModelsWithPricing(ctx, models)
-	if len(models) == 0 {
-		return "", fmt.Errorf("no models with pricing found for group %s", group)
-	}
+	models := candidates.Models
 	if req == nil || len(req.Messages) == 0 {
-		return models[rand.Intn(len(models))], nil
+		return models[0], nil
 	}
 	prompt := extractPrompt(req.Messages)
 	if prompt == "" {
-		return models[rand.Intn(len(models))], nil
+		return models[0], nil
 	}
 	r.once.Do(func() { r.scorer, r.err = newEmbeddingScorerFromEnv() })
 	if r.err != nil {
