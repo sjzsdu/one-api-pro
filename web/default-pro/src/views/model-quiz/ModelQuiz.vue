@@ -55,14 +55,14 @@
         </div>
 
         <a-row :gutter="24">
-          <a-col :span="12">
+          <a-col :xs="24" :md="12">
             <div class="result-card selected-model">
               <div class="card-label">选中模型</div>
               <div class="card-value model-name">{{ result.selected_model }}</div>
               <div class="card-reason">{{ result.reason }}</div>
             </div>
           </a-col>
-          <a-col :span="12">
+          <a-col :xs="24" :md="12">
             <div class="result-card turn-type">
               <div class="card-label">请求类型</div>
               <div class="card-value">{{ getTurnTypeLabel(result.turn_type) }}</div>
@@ -74,19 +74,19 @@
           <h3>模型评分</h3>
           <div class="scores-grid">
             <div
-              v-for="(score, model) in result.model_scores"
-              :key="model"
+              v-for="item in sortedScores"
+              :key="item.model"
               class="score-item"
-              :class="{ 'highest': model === result.selected_model }"
+              :class="{ 'highest': item.model === result.selected_model }"
             >
-              <div class="score-model">{{ model }}</div>
+              <div class="score-model">{{ item.model }}</div>
               <div class="score-bar-wrapper">
                 <div
                   class="score-bar"
-                  :style="{ width: (score / 3 * 100) + '%' }"
+                  :style="{ width: (item.score / maxScore * 100) + '%' }"
                 />
               </div>
-              <div class="score-value">{{ score.toFixed(1) }}</div>
+              <div class="score-value">{{ item.score.toFixed(1) }}</div>
             </div>
           </div>
         </div>
@@ -115,13 +115,18 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import api from '@/api'
 
 const prompt = ref('')
 const loading = ref(false)
 const result = ref(null)
+
+const sortedScores = computed(() => Object.entries(result.value?.model_scores || {})
+  .map(([model, score]) => ({ model, score }))
+  .sort((a, b) => b.score - a.score || a.model.localeCompare(b.model)))
+const maxScore = computed(() => Math.max(1, ...sortedScores.value.map(item => item.score)))
 
 const examples = {
   code: '帮我写一个 Python 函数来实现快速排序算法',
@@ -227,6 +232,10 @@ function getTurnTypeLabel(turnType) {
   justify-content: space-between;
   align-items: center;
   margin-top: 12px;
+}
+
+.input-actions :deep(.arco-space) {
+  flex-wrap: wrap;
 }
 
 .result-section {
@@ -375,5 +384,24 @@ function getTurnTypeLabel(turnType) {
 .detail-label {
   color: #86909c;
   margin-right: 8px;
+}
+
+@media (max-width: 640px) {
+  .model-quiz-page {
+    padding: 16px;
+  }
+
+  .input-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .score-model {
+    width: 105px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 </style>

@@ -7,6 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/modelbus/one-api-pro/common/ctxkey"
+	"github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/modelrouter"
 )
 
@@ -39,21 +41,7 @@ func GetRoutingDecisions(c *gin.Context) {
 
 // QuizRequest is the request body for the model routing quiz.
 type QuizRequest struct {
-	Prompt   string `json:"prompt" binding:"required"`
-	Strategy string `json:"strategy,omitempty"` // optional: override strategy
-}
-
-// QuizResponse is the response for the model routing quiz.
-type QuizResponse struct {
-	Prompt            string             `json:"prompt"`
-	DetectedCategory  string             `json:"detected_category"`
-	SelectedModel     string             `json:"selected_model"`
-	ModelScores       map[string]float64 `json:"model_scores"`
-	Reason            string             `json:"reason"`
-	AvailableModels   []string           `json:"available_models"`
-	FilteredOutModels []string           `json:"filtered_out_models"`
-	Strategy          string             `json:"strategy"`
-	TurnType          string             `json:"turn_type"`
+	Prompt string `json:"prompt" binding:"required"`
 }
 
 // ModelRouterQuiz simulates model routing without making real LLM calls.
@@ -76,15 +64,31 @@ func ModelRouterQuiz(c *gin.Context) {
 		})
 		return
 	}
-
-	// Use default strategy or override
-	strategy := req.Strategy
-	if strategy == "" {
-		strategy = "scoring" // default to scoring for quiz
+	if len([]rune(req.Prompt)) > 20000 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Prompt cannot exceed 20000 characters",
+		})
+		return
 	}
 
-	// Simulate the routing decision using the scoring logic
-	result := modelrouter.SimulateRouting(req.Prompt, strategy)
+	userID := c.GetInt(ctxkey.Id)
+	group, err := model.CacheGetUserGroup(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to determine the user's model group",
+		})
+		return
+	}
+	result, err := modelrouter.SimulateRouting(c.Request.Context(), group, req.Prompt)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

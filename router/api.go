@@ -129,8 +129,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			modelRouterRoute.GET("/decisions", controller.GetRoutingDecisions)
 		}
-		// Public quiz endpoint - no auth required
-		apiRouter.POST("/model_router/quiz", controller.ModelRouterQuiz)
+		apiRouter.POST("/model_router/quiz", middleware.UserAuth(), controller.ModelRouterQuiz)
 		modelPriceRoute := apiRouter.Group("/model_price")
 		modelPriceRoute.Use(middleware.RootAuth())
 		{
