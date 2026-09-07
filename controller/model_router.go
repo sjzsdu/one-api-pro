@@ -2,6 +2,7 @@ package controller
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -84,5 +85,70 @@ func ModelRouterQuiz(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    result,
+	})
+}
+
+// GetEmbeddingManifest returns the current embedding manifest metadata.
+func GetEmbeddingManifest(c *gin.Context) {
+	manifest, err := modelrouter.LoadEmbeddingManifest(os.Getenv("EMBEDDING_MANIFEST_PATH"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	models := make([]gin.H, 0, len(manifest.Models))
+	for name, info := range manifest.Models {
+		files := make([]gin.H, 0, len(info.Files))
+		for _, f := range info.Files {
+			entry := gin.H{"filename": f.Filename, "url": f.URL}
+			if f.SHA256 != "" {
+				entry["sha256"] = f.SHA256
+			}
+			if f.Size > 0 {
+				entry["size"] = f.Size
+			}
+			files = append(files, entry)
+		}
+		models = append(models, gin.H{
+			"name":      name,
+			"dimension": info.Dimension,
+			"revision":  info.Revision,
+			"files":     files,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"revision": manifest.Revision,
+			"models":   models,
+		},
+	})
+}
+
+// ReloadEmbeddingManifest invalidates the remote manifest cache and reloads.
+func ReloadEmbeddingManifest(c *gin.Context) {
+	modelrouter.InvalidateRemoteManifestCache()
+
+	manifestPath := os.Getenv("EMBEDDING_MANIFEST_PATH")
+	manifest, err := modelrouter.LoadEmbeddingManifest(manifestPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	modelNames := make([]string, 0, len(manifest.Models))
+	for name := range manifest.Models {
+		modelNames = append(modelNames, name)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"revision": manifest.Revision,
+			"models":   modelNames,
+			"count":    len(manifest.Models),
+		},
+		"message": "manifest reloaded successfully",
 	})
 }
