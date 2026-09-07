@@ -3,90 +3,101 @@ package modelrouter
 import (
 	"context"
 	"fmt"
-	"math/rand"
-
-	"github.com/modelbus/one-api-pro/model"
 )
 
-// QuizResult describes a scoring preview. It never sends the prompt to a model
-// or records a production routing decision.
+// QuizResult is a dry-run view of the same candidate and scoring pipeline used
+// by production routing.
 type QuizResult struct {
-	Prompt            string             `json:"prompt"`
-	DetectedCategory  string             `json:"detected_category"`
-	SelectedModel     string             `json:"selected_model"`
-	ModelScores       map[string]float64 `json:"model_scores"`
-	Reason            string             `json:"reason"`
-	AvailableModels   []string           `json:"available_models"`
-	FilteredOutModels []string           `json:"filtered_out_models"`
-	Strategy          string             `json:"strategy"`
-	TurnType          string             `json:"turn_type"`
+	Prompt            string                    `json:"prompt"`
+	Group             string                    `json:"group"`
+	DetectedCategory  string                    `json:"detected_category"`
+	SelectedModel     string                    `json:"selected_model"`
+	ModelScores       map[string]float64        `json:"model_scores"`
+	ScoreDetails      map[string]CandidateScore `json:"score_details"`
+	Reason            string                    `json:"reason"`
+	AvailableModels   []string                  `json:"available_models"`
+	FilteredOutModels []string                  `json:"filtered_out_models"`
+	FilterReasons     map[string]string         `json:"filter_reasons"`
+	Strategy          string                    `json:"strategy"`
+	TurnType          string                    `json:"turn_type"`
 }
 
-// SimulateRouting previews the existing scoring strategy against the models
-// available to a group. It performs local analysis only and never calls an LLM.
-func SimulateRouting(ctx context.Context, group, prompt string) (QuizResult, error) {
-	available, err := model.CacheGetGroupModels(ctx, group)
+func SimulateRouting(ctx context.Context, group, prompt, strategy string) (QuizResult, error) {
+	features := &RequestFeatures{Prompt: prompt}
+	candidates, err := ResolveCandidates(ctx, group, features)
 	if err != nil {
-		return QuizResult{}, fmt.Errorf("load available models: %w", err)
+		return QuizResult{}, err
 	}
-	if len(available) == 0 {
-		return QuizResult{}, fmt.Errorf("no available models for group %s", group)
+	if len(candidates.Models) == 0 {
+		return QuizResult{}, fmt.Errorf("no compatible models for group %s", group)
 	}
-
-	candidates := filterModelsWithPricing(ctx, available)
-	if len(candidates) == 0 {
-		return QuizResult{}, fmt.Errorf("no models with pricing found for group %s", group)
+	policy := "balanced"
+	if _, ok := scorePolicies[strategy]; ok {
+		policy = strategy
 	}
-
-	return buildQuizResult(prompt, available, candidates), nil
+	turnType := DetectTurnType(features)
+	if turnType != TurnTypeNormal {
+		policy = "economy"
+	}
+	scored := ScoreModelProfiles(prompt, candidates.Models, candidates.Profiles, policy)
+	flat := make(map[string]float64, len(scored.Scores))
+	for name, score := range scored.Scores {
+		flat[name] = score.Total
+	}
+	return QuizResult{
+		Prompt: prompt, Group: group, DetectedCategory: scored.Category,
+		SelectedModel: scored.Selected, ModelScores: flat, ScoreDetails: scored.Scores,
+		Reason:          "selected from the current group by dynamic profile score (" + policy + ")",
+		AvailableModels: candidates.Models, FilteredOutModels: candidates.FilteredOut,
+		FilterReasons: candidates.FilterReasons, Strategy: strategy, TurnType: turnType.String(),
+	}, nil
 }
 
+// buildQuizResult keeps the original local quiz helper available to callers
+// while using the same dynamic profile scorer as production routing.
 func buildQuizResult(prompt string, available, candidates []string) QuizResult {
-	result := QuizResult{
+	features := &RequestFeatures{Prompt: prompt}
+	turnType := DetectTurnType(features)
+	policy := "balanced"
+	if turnType != TurnTypeNormal {
+		policy = "economy"
+	}
+	profiles := make(map[string]ModelProfile, len(candidates))
+	for _, model := range candidates {
+		profiles[model] = genericProfile(model)
+	}
+	scored := ScoreModelProfiles(prompt, candidates, profiles, policy)
+	modelScores := make(map[string]float64, len(scored.Scores))
+	for name, score := range scored.Scores {
+		modelScores[name] = score.Total
+	}
+	return QuizResult{
 		Prompt:            prompt,
+		DetectedCategory:  scored.Category,
+		SelectedModel:     scored.Selected,
+		ModelScores:       modelScores,
+		Reason:            "selected from the dynamic profile score (" + policy + ")",
 		AvailableModels:   append([]string(nil), candidates...),
 		FilteredOutModels: difference(available, candidates),
 		Strategy:          "scoring",
+		TurnType:          turnType.String(),
 	}
-
-	features := &RequestFeatures{Prompt: prompt}
-	turnType := DetectTurnType(features)
-	result.TurnType = turnType.String()
-	if turnType != TurnTypeNormal {
-		result.SelectedModel = selectSpecialModel(candidates, turnType)
-		result.ModelScores = specialScores(candidates, turnType)
-		result.Reason = fmt.Sprintf("检测到特殊请求类型 %s，优先选择低成本、轻量的适用模型。", turnType)
-		return result
-	}
-
-	category, scores := scoreModelsWithCategory(prompt, candidates)
-	result.DetectedCategory = category
-	result.ModelScores = make(map[string]float64, len(candidates))
-	bestIndex := 0
-	bestScore := scores[0]
-	for i, candidate := range candidates {
-		result.ModelScores[candidate] = scores[i]
-		if scores[i] > bestScore {
-			bestIndex, bestScore = i, scores[i]
-		}
-	}
-
-	if bestScore == 0 {
-		bestIndex = rand.Intn(len(candidates))
-		result.Reason = "未匹配到明确的任务类别，生产路由会从可用模型中随机选择。"
-	} else {
-		result.Reason = fmt.Sprintf("识别为 %s 类任务，%s 的偏好分最高（%.1f）。", category, candidates[bestIndex], bestScore)
-	}
-	result.SelectedModel = candidates[bestIndex]
-	return result
 }
 
-func specialScores(models []string, turnType TurnType) map[string]float64 {
-	scores := make(map[string]float64, len(models))
-	for _, candidate := range models {
-		scores[candidate] = float64(specialModelScore(candidate, turnType))
+// scoreModelsWithCategory is a compatibility view for the original quiz
+// helper. Scores are still produced by dynamic profiles, never a model-name
+// preference table.
+func scoreModelsWithCategory(prompt string, models []string) (string, []float64) {
+	profiles := make(map[string]ModelProfile, len(models))
+	for _, model := range models {
+		profiles[model] = genericProfile(model)
 	}
-	return scores
+	scored := ScoreModelProfiles(prompt, models, profiles, "balanced")
+	scores := make([]float64, len(models))
+	for i, model := range models {
+		scores[i] = scored.Scores[model].Total
+	}
+	return scored.Category, scores
 }
 
 func difference(all, kept []string) []string {

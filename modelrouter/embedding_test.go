@@ -29,7 +29,7 @@ func TestClusterManagerTopP(t *testing.T) {
 func TestEmbeddingScorerUsesQualityCostAndLatency(t *testing.T) {
 	artifacts := &Artifacts{
 		Centroids:    [][]float64{{1, 0}},
-		QualityMeans: map[string][]float64{"quality": {1}, "cheap": {.9}},
+		QualityMeans: map[string][]float64{"quality": {1}, "cheap": {.95}},
 		Models:       map[string]ModelMetadata{"quality": {Cost: 10}, "cheap": {Cost: 0}},
 	}
 	scorer, err := NewEmbeddingScorer(staticEmbedder{1, 0}, artifacts, 1)

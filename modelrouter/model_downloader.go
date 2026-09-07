@@ -1,6 +1,8 @@
 package modelrouter
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,58 +14,21 @@ import (
 )
 
 const (
-	downloadTimeout     = 5 * time.Minute
-	defaultCacheDir     = ".embedding_cache"
-	modelFilePermission = 0644
-	modelDirPermission  = 0755
+	downloadTimeout         = 5 * time.Minute
+	defaultCacheDir         = ".embedding_cache"
+	modelFilePermission     = 0644
+	modelDirPermission      = 0755
+	maxDownloadFileSize     = 2 * 1024 * 1024 * 1024 // 2 GB
+	maxDownloadRedirects    = 5
+	downloadVerifyExtension = ".verify"
 )
-
-// ModelFile represents a downloadable model file.
-type ModelFile struct {
-	Filename string
-	URL      string
-}
-
-// ModelRegistry maps model names to their downloadable files.
-// Users can extend this via EMBEDDING_MODEL_BASE_URL or by adding entries.
-var ModelRegistry = map[string]struct {
-	Dimension int
-	Files     []ModelFile
-}{
-	"jina-v2-code": {
-		Dimension: 768,
-		Files: []ModelFile{
-			{Filename: "model.onnx", URL: "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/model.onnx"},
-			{Filename: "tokenizer.json", URL: "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/tokenizer.json"},
-		},
-	},
-	"jina-embeddings-v2-base-code": {
-		Dimension: 768,
-		Files: []ModelFile{
-			{Filename: "model.onnx", URL: "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/model.onnx"},
-			{Filename: "tokenizer.json", URL: "https://github.com/nicepkg/model-router/releases/download/jina-v2-code/tokenizer.json"},
-		},
-	},
-	"qwen3-embedding": {
-		Dimension: 1024,
-		Files: []ModelFile{
-			{Filename: "model.onnx", URL: "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/model.onnx"},
-			{Filename: "tokenizer.json", URL: "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/tokenizer.json"},
-		},
-	},
-	"qwen3-embedding-0.6b": {
-		Dimension: 1024,
-		Files: []ModelFile{
-			{Filename: "model.onnx", URL: "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/model.onnx"},
-			{Filename: "tokenizer.json", URL: "https://github.com/nicepkg/model-router/releases/download/qwen3-embedding/tokenizer.json"},
-		},
-	},
-}
 
 // ModelDownloader handles downloading and caching ONNX model files.
 type ModelDownloader struct {
 	cacheDir    string
 	baseURL     string
+	manifest    *EmbeddingManifest
+	manifestErr error
 	client      *http.Client
 	mu          sync.Mutex
 	downloading map[string]chan struct{}
@@ -71,7 +36,7 @@ type ModelDownloader struct {
 
 // NewModelDownloader creates a downloader with the given cache directory.
 // If cacheDir is empty, it defaults to $HOME/.embedding_cache or ./embedding_cache.
-// If baseURL is non-empty, it overrides the registry URLs by prepending the base path.
+// If baseURL is non-empty, it overrides manifest URLs by prepending the base path.
 func NewModelDownloader(cacheDir, baseURL string) *ModelDownloader {
 	if cacheDir == "" {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -81,16 +46,30 @@ func NewModelDownloader(cacheDir, baseURL string) *ModelDownloader {
 		}
 	}
 	cacheDir = expandHomeDir(cacheDir)
+	manifest, manifestErr := LoadEmbeddingManifest(os.Getenv("EMBEDDING_MANIFEST_PATH"))
 	return &ModelDownloader{
 		cacheDir:    cacheDir,
 		baseURL:     strings.TrimRight(baseURL, "/"),
-		client:      &http.Client{Timeout: downloadTimeout},
+		manifest:    manifest,
+		manifestErr: manifestErr,
+		client: &http.Client{
+			Timeout: downloadTimeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= maxDownloadRedirects {
+					return fmt.Errorf("too many redirects (%d)", len(via))
+				}
+				if len(via) > 0 && !strings.HasPrefix(req.URL.String(), "https://") {
+					return fmt.Errorf("redirect to non-HTTPS URL rejected: %s", req.URL.String())
+				}
+				return nil
+			},
+		},
 		downloading: make(map[string]chan struct{}),
 	}
 }
 
 // ResolveModelFiles returns the local paths for a model's files, downloading
-// them if necessary. If the model is not in the registry and baseURL is set,
+// them if necessary. If the model is not in the manifest and baseURL is set,
 // it constructs URLs from baseURL/<model>/<filename>.
 func (d *ModelDownloader) ResolveModelFiles(modelName string) (modelPath, tokenizerPath string, err error) {
 	return d.ResolveModelFilesTo(modelName, "", "")
@@ -104,19 +83,26 @@ func (d *ModelDownloader) ResolveModelFilesTo(modelName, modelPath, tokenizerPat
 	if modelName == "" {
 		return "", "", fmt.Errorf("embedding model name is required")
 	}
-
-	info, ok := ModelRegistry[modelName]
-	if !ok && d.baseURL == "" {
-		return "", "", fmt.Errorf("model %q not found in registry and no EMBEDDING_MODEL_BASE_URL set", modelName)
+	if d.manifestErr != nil && d.baseURL == "" {
+		return "", "", d.manifestErr
 	}
 
-	// Build file list: either from registry or from baseURL convention
+	var info EmbeddingModelManifest
+	var ok bool
+	if d.manifest != nil {
+		info, ok = d.manifest.Models[modelName]
+	}
+	if !ok && d.baseURL == "" {
+		return "", "", fmt.Errorf("model %q not found in embedding manifest and no EMBEDDING_MODEL_BASE_URL set", modelName)
+	}
+
+	// Build the file list from the manifest or the base URL convention.
 	var files []ModelFile
 	if ok && d.baseURL == "" {
 		files = info.Files
 	} else {
 		// Convention: baseURL/<model>/model.onnx and baseURL/<model>/tokenizer.json.
-		// A configured base URL intentionally overrides built-in registry URLs.
+		// A configured base URL intentionally overrides manifest URLs.
 		files = []ModelFile{
 			{Filename: "model.onnx", URL: d.baseURL + "/" + modelName + "/model.onnx"},
 			{Filename: "tokenizer.json", URL: d.baseURL + "/" + modelName + "/tokenizer.json"},
@@ -141,7 +127,7 @@ func (d *ModelDownloader) ResolveModelFilesTo(modelName, modelPath, tokenizerPat
 		if err := os.MkdirAll(filepath.Dir(localPath), modelDirPermission); err != nil {
 			return "", "", fmt.Errorf("create directory for %s: %w", localPath, err)
 		}
-		if err := d.ensureFile(localPath, f.URL); err != nil {
+		if err := d.ensureFile(localPath, f); err != nil {
 			return "", "", err
 		}
 		if f.Filename == "model.onnx" {
@@ -174,12 +160,18 @@ func expandHomeDir(path string) string {
 	return path
 }
 
-// ensureFile checks if the file exists locally and downloads it if not.
-// Uses a per-path mutex to avoid concurrent downloads of the same file.
-func (d *ModelDownloader) ensureFile(localPath, url string) error {
-	// Fast path: file already exists
-	if info, err := os.Stat(localPath); err == nil && info.Size() > 0 {
+// ensureFile checks if the file exists locally and is valid, downloading it if not.
+// Validates SHA256 if the manifest provides a checksum. Re-downloads corrupted files.
+func (d *ModelDownloader) ensureFile(localPath string, file ModelFile) error {
+	// Fast path: file exists and passes integrity check
+	if d.isFileValid(localPath, file.SHA256) {
 		return nil
+	}
+
+	// File exists but checksum mismatch → remove and re-download
+	if info, err := os.Stat(localPath); err == nil && info.Size() > 0 {
+		os.Remove(localPath)
+		os.Remove(localPath + downloadVerifyExtension)
 	}
 
 	// Serialize downloads for the same path
@@ -188,7 +180,7 @@ func (d *ModelDownloader) ensureFile(localPath, url string) error {
 		d.mu.Unlock()
 		<-ch
 		// Re-check after download completed
-		if info, err := os.Stat(localPath); err == nil && info.Size() > 0 {
+		if d.isFileValid(localPath, file.SHA256) {
 			return nil
 		}
 		return fmt.Errorf("download failed for %s", localPath)
@@ -204,19 +196,78 @@ func (d *ModelDownloader) ensureFile(localPath, url string) error {
 		close(ch)
 	}()
 
-	return d.downloadFile(localPath, url)
+	if err := d.downloadFile(localPath, file); err != nil {
+		return err
+	}
+
+	// Write verification marker to avoid repeated checks
+	if file.SHA256 != "" {
+		verifyPath := localPath + downloadVerifyExtension
+		os.WriteFile(verifyPath, []byte(file.SHA256), modelFilePermission)
+	}
+
+	return nil
 }
 
-// downloadFile downloads a URL to a local path using atomic write (write to tmp, then rename).
-func (d *ModelDownloader) downloadFile(localPath, url string) error {
+// isFileValid checks if a local file exists, is non-empty, and optionally
+// matches the expected SHA256 checksum. Also checks the verify marker file
+// to avoid re-hashing large files on every startup.
+func (d *ModelDownloader) isFileValid(localPath, expectedSHA256 string) bool {
+	info, err := os.Stat(localPath)
+	if err != nil || info.Size() == 0 {
+		return false
+	}
+
+	// No checksum to verify
+	if expectedSHA256 == "" {
+		return true
+	}
+
+	// Check verify marker — if it matches, skip expensive hash
+	verifyPath := localPath + downloadVerifyExtension
+	if marker, err := os.ReadFile(verifyPath); err == nil {
+		if strings.TrimSpace(string(marker)) == expectedSHA256 {
+			return true
+		}
+	}
+
+	// Compute SHA256 of the file
+	f, err := os.Open(localPath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	actual := hex.EncodeToString(h.Sum(nil))
+	return actual == expectedSHA256
+}
+
+// downloadFile downloads a ModelFile to a local path using atomic write
+// (write to tmp, then rename). Enforces file size limits via io.LimitReader.
+func (d *ModelDownloader) downloadFile(localPath string, file ModelFile) error {
+	url := file.URL
+	if url == "" {
+		return fmt.Errorf("no download URL for %s", file.Filename)
+	}
+
 	resp, err := d.client.Get(url)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", url, err)
+		return fmt.Errorf("download %s: %w", file.Filename, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
+		return fmt.Errorf("download %s: HTTP %d", file.Filename, resp.StatusCode)
+	}
+
+	// Enforce expected file size if provided
+	reader := io.LimitReader(resp.Body, maxDownloadFileSize+1)
+	if file.Size > 0 {
+		reader = io.LimitReader(resp.Body, file.Size+1)
 	}
 
 	f, err := os.CreateTemp(filepath.Dir(localPath), ".embedding-download-*")
@@ -232,12 +283,34 @@ func (d *ModelDownloader) downloadFile(localPath, url string) error {
 		return fmt.Errorf("set temp file permissions: %w", err)
 	}
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	written, err := io.Copy(f, reader)
+	if err != nil {
 		return fmt.Errorf("write model file: %w", err)
+	}
+
+	// Check size limits
+	if file.Size > 0 && written > file.Size {
+		return fmt.Errorf("downloaded file %s size %d exceeds expected %d bytes", file.Filename, written, file.Size)
+	}
+	if file.Size == 0 && written > maxDownloadFileSize {
+		return fmt.Errorf("downloaded file %s exceeds maximum size limit (%d bytes)", file.Filename, maxDownloadFileSize)
 	}
 
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close temp file: %w", err)
+	}
+
+	// Verify SHA256 before committing
+	if file.SHA256 != "" {
+		actual, err := fileSHA256(tmpPath)
+		if err != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("verify checksum for %s: %w", file.Filename, err)
+		}
+		if actual != file.SHA256 {
+			os.Remove(tmpPath)
+			return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", file.Filename, file.SHA256, actual)
+		}
 	}
 
 	// Atomic rename
@@ -248,19 +321,37 @@ func (d *ModelDownloader) downloadFile(localPath, url string) error {
 	return nil
 }
 
-// IsModelCached checks if all required files for a model are already cached.
+// fileSHA256 computes the SHA256 hex digest of a file.
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// IsModelCached checks if all required files for a model are already cached
+// and pass integrity checks.
 func (d *ModelDownloader) IsModelCached(modelName string) bool {
 	modelName = strings.ToLower(strings.TrimSpace(modelName))
 	modelDir := filepath.Join(d.cacheDir, modelName)
 
-	info, ok := ModelRegistry[modelName]
+	if d.manifest == nil {
+		return false
+	}
+	info, ok := d.manifest.Models[modelName]
 	if !ok {
 		return false
 	}
 
 	for _, f := range info.Files {
 		path := filepath.Join(modelDir, f.Filename)
-		if stat, err := os.Stat(path); err != nil || stat.Size() == 0 {
+		if !d.isFileValid(path, f.SHA256) {
 			return false
 		}
 	}
@@ -272,4 +363,14 @@ func (d *ModelDownloader) ClearCache(modelName string) error {
 	modelName = strings.ToLower(strings.TrimSpace(modelName))
 	modelDir := filepath.Join(d.cacheDir, modelName)
 	return os.RemoveAll(modelDir)
+}
+
+// ClearAllCache removes the entire embedding cache directory.
+func (d *ModelDownloader) ClearAllCache() error {
+	return os.RemoveAll(d.cacheDir)
+}
+
+// CacheDir returns the root cache directory path.
+func (d *ModelDownloader) CacheDir() string {
+	return d.cacheDir
 }

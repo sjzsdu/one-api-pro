@@ -194,19 +194,6 @@ func applyEmbeddingPreset(cfg *ONNXEmbedderConfig) {
 	if cfg.OutputName == "" {
 		cfg.OutputName = "last_hidden_state"
 	}
-	if cfg.Dimension == 0 {
-		switch strings.ToLower(cfg.Model) {
-		case "jina-v2-code", "jina-embeddings-v2-base-code":
-			cfg.Dimension = 768
-		case "qwen3-embedding", "qwen3-embedding-0.6b":
-			cfg.Dimension = 1024
-		default:
-			// Check ModelRegistry for dimension
-			if info, ok := ModelRegistry[strings.ToLower(cfg.Model)]; ok {
-				cfg.Dimension = info.Dimension
-			}
-		}
-	}
 }
 
 func (e *ONNXEmbedder) Dimension() int { return e.dimension }

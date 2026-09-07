@@ -18,6 +18,17 @@ ARTIFACTS_PATH=./modelrouter/artifacts
 `EMBEDDING_TOKENIZER_PATH`, and `ONNXRUNTIME_LIBRARY` are optional advanced
 settings. When explicit model/tokenizer paths do not exist, their parent
 directories are created and the files are downloaded there automatically.
+The bundled download catalog is data-driven; set `EMBEDDING_MANIFEST_PATH` to
+use a custom JSON manifest without changing Go code.
+
+The scoring router always starts from the models enabled for the request group.
+Optional `MODEL_ROUTER_PROFILE_PATH` points to a JSON array of model profiles
+containing explicit capabilities (`supported`, `unsupported`, or `unknown`),
+context window, per-category quality, reliability, and latency. Models missing
+from the profile store remain eligible with a neutral prior and lower
+confidence; only explicitly incompatible models are filtered.
+Set `MODEL_ROUTER_SCORING_POLICY` to `balanced`, `quality`, or `economy` to
+select the production scoring weights.
 
 Both Jina v2 Code's WordPiece and Qwen3's BPE are loaded from HuggingFace
 `tokenizer.json` files. A lightweight `WordPieceTokenizer` and the extensible

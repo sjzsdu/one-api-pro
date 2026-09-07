@@ -3,110 +3,200 @@ package modelrouter
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/modelbus/one-api-pro/model"
 	schema "github.com/modelbus/one-api-pro/relay/schema"
 )
 
-func init() {
-	Register("scoring", func() ModelRouter {
-		return &ScoringModelRouter{}
-	})
-}
+func init() { Register("scoring", func() ModelRouter { return &ScoringModelRouter{} }) }
 
 type ScoringModelRouter struct{}
 
-func (r *ScoringModelRouter) Name() string {
-	return "scoring"
+func (r *ScoringModelRouter) Name() string { return "scoring" }
+
+type ScoreWeights struct {
+	Quality, Reliability, Cost, Latency, Uncertainty float64
+}
+
+var scorePolicies = map[string]ScoreWeights{
+	"balanced": {Quality: .45, Reliability: .20, Cost: .20, Latency: .15, Uncertainty: .10},
+	"quality":  {Quality: .65, Reliability: .20, Cost: .05, Latency: .10, Uncertainty: .10},
+	"economy":  {Quality: .20, Reliability: .15, Cost: .50, Latency: .15, Uncertainty: .10},
+}
+
+type CandidateScore struct {
+	Total       float64            `json:"total"`
+	Components  map[string]float64 `json:"components"`
+	Confidence  float64            `json:"confidence"`
+	ProfileData []string           `json:"profile_sources,omitempty"`
+}
+
+type ScoringResult struct {
+	Category string
+	Selected string
+	Scores   map[string]CandidateScore
 }
 
 func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, userID int, req *ModelSelectRequest) (string, error) {
 	started := time.Now()
-	models, err := model.CacheGetGroupModels(ctx, group)
-	if err != nil || len(models) == 0 {
-		routeErr := fmt.Errorf("no available models for group %s", group)
-		RecordRoutingDecision(ctx, RoutingDecision{
-			Strategy: r.Name(), Group: group, UserID: userID,
-			Reason: "no candidates available", Error: routeErr.Error(), LatencyMs: time.Since(started).Milliseconds(),
-		})
-		return "", routeErr
-	}
-	models = filterModelsWithPricing(ctx, models)
-	if len(models) == 0 {
-		routeErr := fmt.Errorf("no models with pricing found for group %s", group)
-		RecordRoutingDecision(ctx, RoutingDecision{
-			Strategy: r.Name(), Group: group, UserID: userID,
-			Reason: "no priced models available", Error: routeErr.Error(), LatencyMs: time.Since(started).Milliseconds(),
-		})
-		return "", routeErr
-	}
-
-	if req == nil {
-		return r.recordFallback(ctx, group, userID, models, started, "request is nil"), nil
-	}
 	features := requestFeatures(req)
-	turnType := DetectTurnType(features)
-	if turnType != TurnTypeNormal {
-		req.DisableSessionPin = true
-		selected := selectSpecialModel(models, turnType)
+	candidates, err := ResolveCandidates(ctx, group, features)
+	if err != nil || len(candidates.Models) == 0 {
+		if err == nil {
+			err = fmt.Errorf("no compatible models for group %s", group)
+		}
 		RecordRoutingDecision(ctx, RoutingDecision{
-			Model: selected, Strategy: r.Name(), Group: group, UserID: userID,
-			TurnType: turnType, Candidates: models,
-			Reason: fmt.Sprintf("special turn type: %s", turnType), LatencyMs: time.Since(started).Milliseconds(),
+			Strategy: r.Name(), Group: group, UserID: userID, Features: features,
+			FilteredOut: candidates.FilteredOut, FilterReasons: candidates.FilterReasons,
+			Reason: "no candidates available", Error: err.Error(), LatencyMs: time.Since(started).Milliseconds(),
 		})
-		return selected, nil
-	}
-	if len(req.Messages) == 0 {
-		return r.recordFallback(ctx, group, userID, models, started, "request contains no messages"), nil
+		return "", err
 	}
 
-	prompt := extractPrompt(req.Messages)
-	if prompt == "" {
-		return r.recordFallback(ctx, group, userID, models, started, "request contains no user prompt"), nil
+	policy := envOrDefault("MODEL_ROUTER_SCORING_POLICY", "balanced")
+	if _, ok := scorePolicies[policy]; !ok {
+		policy = "balanced"
 	}
-
-	scores := scoreModels(prompt, models)
-	candidateScores := make(map[string]float64, len(models))
-	for i, candidate := range models {
-		candidateScores[candidate] = scores[i]
-	}
-	bestIdx := 0
-	bestScore := scores[0]
-	for i, s := range scores {
-		if s > bestScore {
-			bestScore = s
-			bestIdx = i
+	if DetectTurnType(features) != TurnTypeNormal {
+		policy = "economy"
+		if req != nil {
+			req.DisableSessionPin = true
 		}
 	}
-
-	if bestScore == 0 {
-		selected := models[rand.Intn(len(models))]
-		RecordRoutingDecision(ctx, RoutingDecision{
-			Model: selected, Strategy: r.Name(), Group: group, UserID: userID,
-			Candidates: models, CandidateScores: candidateScores,
-			Reason: "keyword scoring produced no match; random fallback", LatencyMs: time.Since(started).Milliseconds(),
-		})
-		return selected, nil
+	result := ScoreModelProfiles(features.Prompt, candidates.Models, candidates.Profiles, policy)
+	flatScores := make(map[string]float64, len(result.Scores))
+	var selectedComponents map[string]float64
+	for name, score := range result.Scores {
+		flatScores[name] = score.Total
+		if name == result.Selected {
+			selectedComponents = score.Components
+		}
 	}
-	selected := models[bestIdx]
+	turnType := DetectTurnType(features)
 	RecordRoutingDecision(ctx, RoutingDecision{
-		Model: selected, Score: bestScore, Scores: map[string]float64{"keyword": bestScore},
-		Strategy: r.Name(), Group: group, UserID: userID, Candidates: models, CandidateScores: candidateScores,
-		Reason: "highest keyword-category score", LatencyMs: time.Since(started).Milliseconds(),
+		Model: result.Selected, Score: result.Scores[result.Selected].Total, Scores: selectedComponents,
+		Strategy: r.Name(), Group: group, UserID: userID, TurnType: turnType, Features: features,
+		Candidates: candidates.Models, CandidateScores: flatScores, FilteredOut: candidates.FilteredOut,
+		FilterReasons: candidates.FilterReasons, Reason: "highest dynamic profile score (" + policy + ")",
+		LatencyMs: time.Since(started).Milliseconds(),
 	})
-	return selected, nil
+	return result.Selected, nil
 }
 
-func (r *ScoringModelRouter) recordFallback(ctx context.Context, group string, userID int, models []string, started time.Time, reason string) string {
-	selected := models[rand.Intn(len(models))]
-	RecordRoutingDecision(ctx, RoutingDecision{
-		Model: selected, Strategy: r.Name(), Group: group, UserID: userID,
-		Candidates: models, Reason: reason + "; random fallback", LatencyMs: time.Since(started).Milliseconds(),
-	})
-	return selected
+func ScoreModelProfiles(prompt string, names []string, profiles map[string]ModelProfile, policy string) ScoringResult {
+	weights, ok := scorePolicies[policy]
+	if !ok {
+		weights = scorePolicies["balanced"]
+	}
+	category := detectTaskCategory(prompt)
+	costs := make(map[string]*float64, len(names))
+	latencies := make(map[string]*float64, len(names))
+	for _, name := range names {
+		profile := profiles[name]
+		costs[name] = averageCost(profile.InputCost, profile.OutputCost)
+		latencies[name] = profile.Latency
+	}
+	costScores := normalizeLowerIsBetter(names, costs)
+	latencyScores := normalizeLowerIsBetter(names, latencies)
+
+	result := ScoringResult{Category: category, Scores: make(map[string]CandidateScore, len(names))}
+	ordered := append([]string(nil), names...)
+	sort.Strings(ordered)
+	bestScore := math.Inf(-1)
+	for _, name := range ordered {
+		profile := profiles[name]
+		quality := .5
+		if value, exists := profile.Quality[category]; exists {
+			quality = clamp01(value)
+		} else if value, exists := profile.Quality["default"]; exists {
+			quality = clamp01(value)
+		}
+		reliability := .5
+		if profile.Reliability != nil {
+			reliability = clamp01(*profile.Reliability)
+		}
+		confidence := clamp01(profile.Confidence)
+		uncertainty := 1 - confidence
+		components := map[string]float64{
+			"quality": quality, "reliability": reliability,
+			"cost": costScores[name], "latency": latencyScores[name],
+			"uncertainty_penalty": uncertainty,
+		}
+		total := weights.Quality*quality + weights.Reliability*reliability + weights.Cost*costScores[name] + weights.Latency*latencyScores[name] - weights.Uncertainty*uncertainty
+		result.Scores[name] = CandidateScore{Total: total, Components: components, Confidence: confidence, ProfileData: append([]string(nil), profile.Sources...)}
+		if total > bestScore {
+			bestScore, result.Selected = total, name
+		}
+	}
+	return result
+}
+
+func normalizeLowerIsBetter(names []string, values map[string]*float64) map[string]float64 {
+	result := make(map[string]float64, len(names))
+	minValue, maxValue := math.Inf(1), math.Inf(-1)
+	for _, name := range names {
+		if value := values[name]; value != nil {
+			minValue, maxValue = min(minValue, *value), max(maxValue, *value)
+		}
+	}
+	for _, name := range names {
+		value := values[name]
+		switch {
+		case value == nil:
+			result[name] = .5
+		case maxValue <= minValue:
+			result[name] = 1
+		default:
+			result[name] = 1 - (*value-minValue)/(maxValue-minValue)
+		}
+	}
+	return result
+}
+
+func averageCost(input, output *float64) *float64 {
+	if input == nil && output == nil {
+		return nil
+	}
+	if input == nil {
+		value := *output
+		return &value
+	}
+	if output == nil {
+		value := *input
+		return &value
+	}
+	value := (*input + *output) / 2
+	return &value
+}
+
+func clamp01(value float64) float64 { return max(0, min(1, value)) }
+
+func detectTaskCategory(prompt string) string {
+	lower := strings.ToLower(prompt)
+	categories := map[string][]string{
+		"code":      {"代码", "code", "编程", "函数", "bug", "debug", "实现", "implement", "算法", "algorithm", "refactor", "重构", "syntax"},
+		"translate": {"翻译", "translate", "translation", "英译中", "中译英", "localize"},
+		"math":      {"数学", "计算", "方程", "证明", "math", "calculate", "equation", "proof", "微积分", "线性代数", "统计"},
+		"reason":    {"推理", "分析", "逻辑", "reason", "analyze", "logic", "为什么", "why", "对比", "compare", "评估", "evaluate"},
+		"creative":  {"写", "创作", "故事", "诗", "write", "create", "story", "poem", "文案", "copywriting", "小说", "novel"},
+		"chat":      {"你好", "hello", "hi", "聊天", "chat", "闲聊", "你是谁", "who are you"},
+	}
+	best, maxHits := "default", 0
+	for category, keywords := range categories {
+		hits := 0
+		for _, keyword := range keywords {
+			if strings.Contains(lower, keyword) {
+				hits++
+			}
+		}
+		if hits > maxHits || hits == maxHits && hits > 0 && category < best {
+			best, maxHits = category, hits
+		}
+	}
+	return best
 }
 
 func requestFeatures(req *ModelSelectRequest) *RequestFeatures {
@@ -119,97 +209,13 @@ func requestFeatures(req *ModelSelectRequest) *RequestFeatures {
 	return req.Features
 }
 
-func selectSpecialModel(models []string, turnType TurnType) string {
-	best := models[0]
-	bestScore := specialModelScore(best, turnType)
-	for _, candidate := range models[1:] {
-		score := specialModelScore(candidate, turnType)
-		if score > bestScore || score == bestScore && candidate < best {
-			best, bestScore = candidate, score
-		}
-	}
-	return best
-}
-
-func specialModelScore(name string, turnType TurnType) int {
-	profile := inferModelProfile(name)
-	score := 100 - profile.costTier*20
-	if profile.lightweight {
-		score += 30
-	}
-	if turnType == TurnTypeSubAgent && containsAny(strings.ToLower(name), "coder", "code", "deepseek") {
-		score += 10
-	}
-	return score
-}
-
 func extractPrompt(messages []schema.Message) string {
-	var sb strings.Builder
-	for _, msg := range messages {
-		if msg.Role == "user" {
-			sb.WriteString(msg.StringContent())
-			sb.WriteByte(' ')
+	var builder strings.Builder
+	for _, message := range messages {
+		if message.Role == "user" {
+			builder.WriteString(message.StringContent())
+			builder.WriteByte(' ')
 		}
 	}
-	return strings.TrimSpace(sb.String())
-}
-
-func scoreModels(prompt string, models []string) []float64 {
-	_, scores := scoreModelsWithCategory(prompt, models)
-	return scores
-}
-
-func scoreModelsWithCategory(prompt string, models []string) (string, []float64) {
-	scores := make([]float64, len(models))
-	lower := strings.ToLower(prompt)
-
-	categories := []struct {
-		name     string
-		keywords []string
-	}{
-		{"code", []string{"代码", "code", "编程", "函数", "bug", "debug", "实现", "implement", "算法", "algorithm", "refactor", "重构", "编程语言", "syntax"}},
-		{"translate", []string{"翻译", "translate", "translation", "英译中", "中译英", "localize"}},
-		{"math", []string{"数学", "计算", "方程", "证明", "math", "calculate", "equation", "proof", "微积分", "线性代数", "统计"}},
-		{"reason", []string{"推理", "分析", "逻辑", "reason", "analyze", "logic", "为什么", "why", "对比", "compare", "评估", "evaluate"}},
-		{"creative", []string{"写", "创作", "故事", "诗", "write", "create", "story", "poem", "文案", "copywriting", "小说", "novel"}},
-		{"chat", []string{"你好", "hello", "hi", "聊天", "chat", "闲聊", "你是谁", "who are you"}},
-	}
-
-	modelPreference := map[string]map[string]float64{
-		"code":      {"deepseek-chat": 3, "gpt-4": 2, "gpt-4o": 2, "claude-3.5-sonnet": 2.5, "deepseek-coder": 3},
-		"translate": {"gpt-4": 3, "gpt-4o": 2.5, "claude-3.5-sonnet": 3, "deepseek-chat": 1.5},
-		"math":      {"deepseek-reasoner": 3, "gpt-4": 2.5, "gpt-4o": 2, "o1": 3, "o1-mini": 2.5},
-		"reason":    {"gpt-4": 2.5, "gpt-4o": 2, "claude-3.5-sonnet": 2.5, "deepseek-reasoner": 2.5},
-		"creative":  {"gpt-4": 2.5, "gpt-4o": 3, "claude-3.5-sonnet": 2.5, "deepseek-chat": 1.5},
-		"chat":      {"gpt-4o-mini": 3, "gpt-3.5-turbo": 3, "deepseek-chat": 2.5, "gpt-4o": 1.5},
-	}
-
-	detectedCategory := ""
-	maxHits := 0
-	for _, category := range categories {
-		hits := 0
-		for _, kw := range category.keywords {
-			if strings.Contains(lower, kw) {
-				hits++
-			}
-		}
-		if hits > maxHits {
-			maxHits = hits
-			detectedCategory = category.name
-		}
-	}
-
-	if detectedCategory == "" {
-		return "", scores
-	}
-
-	prefs := modelPreference[detectedCategory]
-	for i, m := range models {
-		if score, ok := prefs[m]; ok {
-			scores[i] = score
-		} else {
-			scores[i] = 0.5
-		}
-	}
-	return detectedCategory, scores
+	return strings.TrimSpace(builder.String())
 }
