@@ -75,10 +75,16 @@ var (
 
 func defaultModelProfileProvider() (ModelProfileProvider, error) {
 	profileProviderOnce.Do(func() {
-		store, err := LoadProfileStore(os.Getenv("MODEL_ROUTER_PROFILE_PATH"))
+		profilePath := os.Getenv("MODEL_ROUTER_PROFILE_PATH")
+		// Fall back to bundled model profiles if not configured
+		if profilePath == "" {
+			profilePath = "modelrouter/artifacts/model_profiles.json"
+		}
+		store, err := LoadProfileStore(profilePath)
 		if err != nil {
-			profileProviderErr = err
-			return
+			// Log warning but continue with empty store
+			fmt.Printf("warning: could not load model profiles from %s: %v\n", profilePath, err)
+			store = NewProfileStore(nil)
 		}
 		profileProvider = defaultProfileProvider{store: store}
 	})
