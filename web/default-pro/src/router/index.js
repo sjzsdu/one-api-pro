@@ -71,6 +71,7 @@ const routes = [
       ] },
       { path: 'redeem', name: 'Redeem', component: () => import('@/views/redeem/Redeem.vue'), meta: { title: '兑换' } },
       { path: 'chat', name: 'Chat', component: () => import('@/views/chat/Chat.vue'), meta: { title: '对话' } },
+      { path: 'model-quiz', name: 'ModelQuiz', component: () => import('@/views/model-quiz/ModelQuiz.vue'), meta: { title: '模型测验' } },
     ],
   },
   {
