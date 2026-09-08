@@ -21,6 +21,7 @@ type QuizResult struct {
 	FilterReasons     map[string]string         `json:"filter_reasons"`
 	Strategy          string                    `json:"strategy"`
 	TurnType          string                    `json:"turn_type"`
+	Difficulty        TaskDifficulty            `json:"difficulty"`
 }
 
 func SimulateRouting(ctx context.Context, group, prompt, strategy string) (QuizResult, error) {
@@ -64,7 +65,7 @@ func SimulateRouting(ctx context.Context, group, prompt, strategy string) (QuizR
 	if turnType != TurnTypeNormal {
 		policy = "economy"
 	}
-	scored := ScoreModelProfiles(prompt, candidates.Models, candidates.Profiles, policy)
+	scored := ScoreModelProfilesForRequest(features, candidates.Models, candidates.Profiles, candidates.Availability, policy)
 	flat := make(map[string]float64, len(scored.Scores))
 	for name, score := range scored.Scores {
 		flat[name] = score.Total
@@ -74,7 +75,7 @@ func SimulateRouting(ctx context.Context, group, prompt, strategy string) (QuizR
 		SelectedModel: scored.Selected, ModelScores: flat, ScoreDetails: scored.Scores,
 		Reason:          "selected from the current group by dynamic profile score (" + policy + ")",
 		AvailableModels: candidates.Models, FilteredOutModels: candidates.FilteredOut,
-		FilterReasons: candidates.FilterReasons, Strategy: strategy, TurnType: turnType.String(),
+		FilterReasons: candidates.FilterReasons, Strategy: strategy, TurnType: turnType.String(), Difficulty: scored.Difficulty,
 	}, nil
 }
 
@@ -91,7 +92,7 @@ func buildQuizResult(prompt string, available, candidates []string) QuizResult {
 	for _, model := range candidates {
 		profiles[model] = genericProfile(model)
 	}
-	scored := ScoreModelProfiles(prompt, candidates, profiles, policy)
+	scored := ScoreModelProfilesForRequest(features, candidates, profiles, nil, policy)
 	modelScores := make(map[string]float64, len(scored.Scores))
 	for name, score := range scored.Scores {
 		modelScores[name] = score.Total
@@ -104,8 +105,8 @@ func buildQuizResult(prompt string, available, candidates []string) QuizResult {
 		Reason:            "selected from the dynamic profile score (" + policy + ")",
 		AvailableModels:   append([]string(nil), candidates...),
 		FilteredOutModels: difference(available, candidates),
-		Strategy:          "scoring",
-		TurnType:          turnType.String(),
+		Strategy:          "scoring", Difficulty: scored.Difficulty,
+		TurnType: turnType.String(),
 	}
 }
 

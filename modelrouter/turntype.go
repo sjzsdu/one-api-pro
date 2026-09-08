@@ -33,19 +33,33 @@ func (t TurnType) String() string {
 	}
 }
 
+// TaskDifficulty captures the amount of model capability a request needs.
+// It is intentionally independent of TurnType: a code request can be normal
+// or complex, while maintenance turns (titles, compression, tool results)
+// should stay cheap regardless of their text length.
+type TaskDifficulty string
+
+const (
+	TaskDifficultySimple  TaskDifficulty = "simple"
+	TaskDifficultyNormal  TaskDifficulty = "normal"
+	TaskDifficultyComplex TaskDifficulty = "complex"
+)
+
 // RequestFeatures contains routing-relevant facts extracted from a request.
 // The explicit flags let callers avoid relying on prompt heuristics.
 type RequestFeatures struct {
-	Prompt             string `json:"-"`
-	SystemPrompt       string `json:"-"`
-	EstimatedTokens    int    `json:"estimated_tokens,omitempty"`
-	MaxOutputTokens    int    `json:"max_output_tokens,omitempty"`
-	HasImages          bool   `json:"has_images,omitempty"`
-	HasTools           bool   `json:"has_tools,omitempty"`
-	HasToolResult      bool   `json:"has_tool_result,omitempty"`
-	CompressionRequest bool   `json:"compression_request,omitempty"`
-	SubAgentRequest    bool   `json:"sub_agent_request,omitempty"`
-	TitleRequest       bool   `json:"title_request,omitempty"`
+	Prompt             string         `json:"-"`
+	SystemPrompt       string         `json:"-"`
+	EstimatedTokens    int            `json:"estimated_tokens,omitempty"`
+	MaxOutputTokens    int            `json:"max_output_tokens,omitempty"`
+	HasImages          bool           `json:"has_images,omitempty"`
+	HasTools           bool           `json:"has_tools,omitempty"`
+	HasToolResult      bool           `json:"has_tool_result,omitempty"`
+	CompressionRequest bool           `json:"compression_request,omitempty"`
+	SubAgentRequest    bool           `json:"sub_agent_request,omitempty"`
+	TitleRequest       bool           `json:"title_request,omitempty"`
+	TaskCategory       string         `json:"task_category,omitempty"`
+	Difficulty         TaskDifficulty `json:"difficulty,omitempty"`
 }
 
 // ExtractRequestFeatures normalizes the OpenAI-compatible request fields used
@@ -84,6 +98,8 @@ func ExtractRequestFeatures(messages []schema.Message, tools []schema.Tool, maxT
 	features.Prompt = strings.Join(prompts, "\n")
 	features.SystemPrompt = strings.TrimSpace(features.SystemPrompt)
 	features.EstimatedTokens += maxTokens
+	features.TaskCategory = detectTaskCategory(features.Prompt)
+	features.Difficulty = DetectTaskDifficulty(features)
 	return features
 }
 
@@ -135,6 +151,47 @@ func DetectTurnType(features *RequestFeatures) TurnType {
 		return TurnTypeTitleGen
 	}
 	return TurnTypeNormal
+}
+
+// DetectTaskDifficulty classifies the request using structured request facts
+// first, then conservative prompt signals.  The thresholds avoid sending a
+// short code question to an expensive reasoning model, while multi-step code
+// and reasoning work receives the quality-oriented policy.
+func DetectTaskDifficulty(features *RequestFeatures) TaskDifficulty {
+	if features == nil {
+		return TaskDifficultyNormal
+	}
+	if DetectTurnType(features) != TurnTypeNormal {
+		return TaskDifficultySimple
+	}
+	if features.HasImages || features.HasTools || features.HasToolResult ||
+		features.EstimatedTokens >= 32000 || features.MaxOutputTokens >= 8192 {
+		return TaskDifficultyComplex
+	}
+	text := strings.ToLower(features.SystemPrompt + "\n" + features.Prompt)
+	complexSignal := containsAny(text,
+		"architecture", "multi-step", "step by step", "production", "refactor", "debug", "implement",
+		"推理", "架构", "多步骤", "逐步", "生产环境", "重构", "调试", "实现")
+	if complexSignal && (features.MaxOutputTokens >= 1024 || features.EstimatedTokens >= 4000) {
+		return TaskDifficultyComplex
+	}
+	if features.EstimatedTokens <= 1000 && features.MaxOutputTokens <= 512 &&
+		!complexSignal {
+		return TaskDifficultySimple
+	}
+	return TaskDifficultyNormal
+}
+
+func (f *RequestFeatures) EnsureClassification() {
+	if f == nil {
+		return
+	}
+	if f.TaskCategory == "" {
+		f.TaskCategory = detectTaskCategory(f.Prompt)
+	}
+	if f.Difficulty == "" {
+		f.Difficulty = DetectTaskDifficulty(f)
+	}
 }
 
 func estimateTokens(text string) int {

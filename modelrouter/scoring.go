@@ -35,9 +35,10 @@ type CandidateScore struct {
 }
 
 type ScoringResult struct {
-	Category string
-	Selected string
-	Scores   map[string]CandidateScore
+	Category   string
+	Difficulty TaskDifficulty
+	Selected   string
+	Scores     map[string]CandidateScore
 }
 
 func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, userID int, req *ModelSelectRequest) (string, error) {
@@ -66,7 +67,7 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 			req.DisableSessionPin = true
 		}
 	}
-	result := ScoreModelProfiles(features.Prompt, candidates.Models, candidates.Profiles, policy)
+	result := ScoreModelProfilesForRequest(features, candidates.Models, candidates.Profiles, candidates.Availability, policy)
 	flatScores := make(map[string]float64, len(result.Scores))
 	var selectedComponents map[string]float64
 	for name, score := range result.Scores {
@@ -87,11 +88,22 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 }
 
 func ScoreModelProfiles(prompt string, names []string, profiles map[string]ModelProfile, policy string) ScoringResult {
+	return ScoreModelProfilesForRequest(&RequestFeatures{Prompt: prompt}, names, profiles, nil, policy)
+}
+
+// ScoreModelProfilesForRequest is the policy engine entry point. It retains
+// the legacy prompt-only scorer above for callers outside the request path.
+func ScoreModelProfilesForRequest(features *RequestFeatures, names []string, profiles map[string]ModelProfile, availability map[string]float64, policy string) ScoringResult {
+	if features == nil {
+		features = &RequestFeatures{}
+	}
+	features.EnsureClassification()
 	weights, ok := scorePolicies[policy]
 	if !ok {
 		weights = scorePolicies["balanced"]
 	}
-	category := detectTaskCategory(prompt)
+	weights = weightsForDifficulty(weights, features.Difficulty)
+	category := features.TaskCategory
 	costs := make(map[string]*float64, len(names))
 	latencies := make(map[string]*float64, len(names))
 	for _, name := range names {
@@ -102,7 +114,7 @@ func ScoreModelProfiles(prompt string, names []string, profiles map[string]Model
 	costScores := normalizeLowerIsBetter(names, costs)
 	latencyScores := normalizeLowerIsBetter(names, latencies)
 
-	result := ScoringResult{Category: category, Scores: make(map[string]CandidateScore, len(names))}
+	result := ScoringResult{Category: category, Difficulty: features.Difficulty, Scores: make(map[string]CandidateScore, len(names))}
 	ordered := append([]string(nil), names...)
 	sort.Strings(ordered)
 	bestScore := math.Inf(-1)
@@ -118,11 +130,18 @@ func ScoreModelProfiles(prompt string, names []string, profiles map[string]Model
 		if profile.Reliability != nil {
 			reliability = clamp01(*profile.Reliability)
 		}
+		available := 1.0
+		if value, exists := availability[name]; exists {
+			available = clamp01(value)
+		}
+		// Availability is a live reliability signal, so it reduces the
+		// profile's historical reliability instead of replacing it.
+		reliability *= available
 		confidence := clamp01(profile.Confidence)
 		uncertainty := 1 - confidence
 		components := map[string]float64{
 			"quality": quality, "reliability": reliability,
-			"cost": costScores[name], "latency": latencyScores[name],
+			"cost": costScores[name], "latency": latencyScores[name], "availability": available,
 			"uncertainty_penalty": uncertainty,
 		}
 		total := weights.Quality*quality + weights.Reliability*reliability + weights.Cost*costScores[name] + weights.Latency*latencyScores[name] - weights.Uncertainty*uncertainty
@@ -132,6 +151,17 @@ func ScoreModelProfiles(prompt string, names []string, profiles map[string]Model
 		}
 	}
 	return result
+}
+
+func weightsForDifficulty(weights ScoreWeights, difficulty TaskDifficulty) ScoreWeights {
+	switch difficulty {
+	case TaskDifficultySimple:
+		return ScoreWeights{Quality: .15, Reliability: .20, Cost: .40, Latency: .25, Uncertainty: .10}
+	case TaskDifficultyComplex:
+		return ScoreWeights{Quality: .60, Reliability: .20, Cost: .08, Latency: .12, Uncertainty: .10}
+	default:
+		return weights
+	}
 }
 
 func normalizeLowerIsBetter(names []string, values map[string]*float64) map[string]float64 {
@@ -206,6 +236,7 @@ func requestFeatures(req *ModelSelectRequest) *RequestFeatures {
 	if req.Features == nil {
 		req.Features = ExtractRequestFeatures(req.Messages, req.Tools, req.MaxTokens)
 	}
+	req.Features.EnsureClassification()
 	return req.Features
 }
 

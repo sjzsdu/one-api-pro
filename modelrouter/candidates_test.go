@@ -5,6 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/modelbus/one-api-pro/channelrouter"
+	"github.com/modelbus/one-api-pro/model"
 )
 
 func TestCandidateSetUsesOnlyProvidedGroupModels(t *testing.T) {
@@ -21,6 +25,55 @@ func TestCandidateSetUsesOnlyProvidedGroupModels(t *testing.T) {
 	}
 	if _, exists := got.Profiles["outside-model"]; exists {
 		t.Fatal("candidate resolver introduced a model outside the group")
+	}
+}
+
+func TestDifficultyChangesProfileSelection(t *testing.T) {
+	expensive, cheap := 10.0, .1
+	profiles := map[string]ModelProfile{
+		"quality": {Model: "quality", InputCost: &expensive, OutputCost: &expensive, Quality: map[string]float64{"default": .95}, Confidence: 1},
+		"cheap":   {Model: "cheap", InputCost: &cheap, OutputCost: &cheap, Quality: map[string]float64{"default": .30}, Confidence: 1},
+	}
+	names := []string{"quality", "cheap"}
+	simple := ScoreModelProfilesForRequest(&RequestFeatures{Prompt: "hello", EstimatedTokens: 10, MaxOutputTokens: 100}, names, profiles, nil, "balanced")
+	if simple.Difficulty != TaskDifficultySimple || simple.Selected != "cheap" {
+		t.Fatalf("simple result = %+v, want cheap simple selection", simple)
+	}
+	complex := ScoreModelProfilesForRequest(&RequestFeatures{Prompt: "implement architecture", MaxOutputTokens: 2048}, names, profiles, nil, "balanced")
+	if complex.Difficulty != TaskDifficultyComplex || complex.Selected != "quality" {
+		t.Fatalf("complex result = %+v, want quality complex selection", complex)
+	}
+}
+
+func TestBestChannelAvailabilityHonorsLiveLimits(t *testing.T) {
+	router := channelrouter.NewChannelRouter()
+	now := time.Now()
+	good := &model.Channel{Id: 1, Status: model.ChannelStatusEnabled}
+	if score, ok := bestChannelAvailability([]*model.Channel{good}, router, now); !ok || score != 1 {
+		t.Fatalf("healthy channel = (%v, %v), want (1, true)", score, ok)
+	}
+	recentFailure := &model.Channel{Id: 2, Status: model.ChannelStatusEnabled, LastErrorTime: now.Unix()}
+	if score, ok := bestChannelAvailability([]*model.Channel{recentFailure}, router, now); !ok || score >= .31 {
+		t.Fatalf("recent failure score = (%v, %v), want a strong penalty", score, ok)
+	}
+	router.SetCooldown(1, 60, "test", 429)
+	if _, ok := bestChannelAvailability([]*model.Channel{good}, router, now); ok {
+		t.Fatal("cooling-down channel should not be serviceable")
+	}
+	rpm := 1
+	rpmBound := &model.Channel{Id: 3, Status: model.ChannelStatusEnabled, RPM: &rpm}
+	router.IncrementRPM(3)
+	if _, ok := bestChannelAvailability([]*model.Channel{rpmBound}, router, now); ok {
+		t.Fatal("RPM-saturated channel should not be serviceable")
+	}
+	maxConcurrency := 1
+	concurrent := &model.Channel{Id: 4, Status: model.ChannelStatusEnabled, MaxConcurrency: &maxConcurrency}
+	if !router.TryAcquireConcurrency(4, maxConcurrency) {
+		t.Fatal("could not acquire test concurrency slot")
+	}
+	defer router.ReleaseConcurrency(4)
+	if _, ok := bestChannelAvailability([]*model.Channel{concurrent}, router, now); ok {
+		t.Fatal("concurrency-saturated channel should not be serviceable")
 	}
 }
 
