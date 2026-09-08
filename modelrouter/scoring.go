@@ -66,7 +66,7 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 			req.DisableSessionPin = true
 		}
 	}
-	result := ScoreModelProfiles(features.Prompt, candidates.Models, candidates.Profiles, policy)
+	result := ScoreRequestFeatures(features, candidates.Models, candidates.Profiles, candidates.Availability, policy)
 	flatScores := make(map[string]float64, len(result.Scores))
 	var selectedComponents map[string]float64
 	for name, score := range result.Scores {
@@ -87,11 +87,35 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 }
 
 func ScoreModelProfiles(prompt string, names []string, profiles map[string]ModelProfile, policy string) ScoringResult {
+	return ScoreRequestFeatures(&RequestFeatures{Prompt: prompt, TaskCategory: detectTaskCategory(prompt)}, names, profiles, nil, policy)
+}
+
+// ScoreRequestFeatures is the policy entry point shared by primary selection
+// and fallback. Availability comes from the live channel admission snapshot.
+func ScoreRequestFeatures(features *RequestFeatures, names []string, profiles map[string]ModelProfile, availability map[string]float64, policy string) ScoringResult {
 	weights, ok := scorePolicies[policy]
 	if !ok {
 		weights = scorePolicies["balanced"]
 	}
-	category := detectTaskCategory(prompt)
+	if features == nil {
+		features = &RequestFeatures{}
+	}
+	category := features.TaskCategory
+	if category == "" {
+		category = detectTaskCategory(features.Prompt)
+	}
+	difficulty := features.Difficulty
+	if difficulty == "" {
+		difficulty = DetectTaskDifficulty(features)
+	}
+	if policy == "balanced" {
+		switch difficulty {
+		case DifficultySimple:
+			weights = ScoreWeights{Quality: .25, Reliability: .20, Cost: .35, Latency: .20, Uncertainty: .10}
+		case DifficultyComplex:
+			weights = ScoreWeights{Quality: .65, Reliability: .20, Cost: .05, Latency: .10, Uncertainty: .10}
+		}
+	}
 	costs := make(map[string]*float64, len(names))
 	latencies := make(map[string]*float64, len(names))
 	for _, name := range names {
@@ -124,6 +148,12 @@ func ScoreModelProfiles(prompt string, names []string, profiles map[string]Model
 			"quality": quality, "reliability": reliability,
 			"cost": costScores[name], "latency": latencyScores[name],
 			"uncertainty_penalty": uncertainty,
+		}
+		if availability != nil {
+			components["availability"] = clamp01(availability[name])
+			reliability *= components["availability"]
+		} else {
+			components["availability"] = 1
 		}
 		total := weights.Quality*quality + weights.Reliability*reliability + weights.Cost*costScores[name] + weights.Latency*latencyScores[name] - weights.Uncertainty*uncertainty
 		result.Scores[name] = CandidateScore{Total: total, Components: components, Confidence: confidence, ProfileData: append([]string(nil), profile.Sources...)}

@@ -33,19 +33,31 @@ func (t TurnType) String() string {
 	}
 }
 
+// TaskDifficulty lets scoring balance quality against cost and latency without
+// relying on a particular model name.
+type TaskDifficulty string
+
+const (
+	DifficultySimple  TaskDifficulty = "simple"
+	DifficultyNormal  TaskDifficulty = "normal"
+	DifficultyComplex TaskDifficulty = "complex"
+)
+
 // RequestFeatures contains routing-relevant facts extracted from a request.
 // The explicit flags let callers avoid relying on prompt heuristics.
 type RequestFeatures struct {
-	Prompt             string `json:"-"`
-	SystemPrompt       string `json:"-"`
-	EstimatedTokens    int    `json:"estimated_tokens,omitempty"`
-	MaxOutputTokens    int    `json:"max_output_tokens,omitempty"`
-	HasImages          bool   `json:"has_images,omitempty"`
-	HasTools           bool   `json:"has_tools,omitempty"`
-	HasToolResult      bool   `json:"has_tool_result,omitempty"`
-	CompressionRequest bool   `json:"compression_request,omitempty"`
-	SubAgentRequest    bool   `json:"sub_agent_request,omitempty"`
-	TitleRequest       bool   `json:"title_request,omitempty"`
+	Prompt             string         `json:"-"`
+	SystemPrompt       string         `json:"-"`
+	EstimatedTokens    int            `json:"estimated_tokens,omitempty"`
+	MaxOutputTokens    int            `json:"max_output_tokens,omitempty"`
+	HasImages          bool           `json:"has_images,omitempty"`
+	HasTools           bool           `json:"has_tools,omitempty"`
+	HasToolResult      bool           `json:"has_tool_result,omitempty"`
+	CompressionRequest bool           `json:"compression_request,omitempty"`
+	SubAgentRequest    bool           `json:"sub_agent_request,omitempty"`
+	TitleRequest       bool           `json:"title_request,omitempty"`
+	TaskCategory       string         `json:"task_category,omitempty"`
+	Difficulty         TaskDifficulty `json:"difficulty,omitempty"`
 }
 
 // ExtractRequestFeatures normalizes the OpenAI-compatible request fields used
@@ -84,7 +96,28 @@ func ExtractRequestFeatures(messages []schema.Message, tools []schema.Tool, maxT
 	features.Prompt = strings.Join(prompts, "\n")
 	features.SystemPrompt = strings.TrimSpace(features.SystemPrompt)
 	features.EstimatedTokens += maxTokens
+	features.TaskCategory = detectTaskCategory(features.Prompt)
+	features.Difficulty = DetectTaskDifficulty(features)
 	return features
+}
+
+// DetectTaskDifficulty uses explicit request structure first. Prompt markers
+// only promote normal requests, so short conversational prompts remain cheap.
+func DetectTaskDifficulty(features *RequestFeatures) TaskDifficulty {
+	if features == nil {
+		return DifficultyNormal
+	}
+	if features.CompressionRequest || features.SubAgentRequest || features.HasImages || features.HasTools || features.HasToolResult || features.EstimatedTokens >= 24_000 || features.MaxOutputTokens >= 8_000 {
+		return DifficultyComplex
+	}
+	text := strings.ToLower(features.SystemPrompt + "\n" + features.Prompt)
+	if containsAny(text, "step by step", "prove", "debug", "refactor", "architecture", "algorithm", "推理", "证明", "调试", "重构", "架构", "算法") {
+		return DifficultyComplex
+	}
+	if features.EstimatedTokens >= 6_000 || features.MaxOutputTokens >= 2_000 || features.TaskCategory == "code" || features.TaskCategory == "math" || features.TaskCategory == "reason" {
+		return DifficultyNormal
+	}
+	return DifficultySimple
 }
 
 func hasImageContent(content any) bool {

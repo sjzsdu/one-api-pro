@@ -65,6 +65,34 @@ func TestUnknownModelsUseNeutralPriorAndStableTieBreak(t *testing.T) {
 	}
 }
 
+func TestRequestDifficultyChangesBalancedSelection(t *testing.T) {
+	expensive, cheap := 10.0, .1
+	profiles := map[string]ModelProfile{
+		"quality": {Model: "quality", InputCost: &expensive, OutputCost: &expensive, Quality: map[string]float64{"default": .95}, Confidence: 1},
+		"cheap":   {Model: "cheap", InputCost: &cheap, OutputCost: &cheap, Quality: map[string]float64{"default": .50}, Confidence: 1},
+	}
+	models := []string{"quality", "cheap"}
+	if got := ScoreRequestFeatures(&RequestFeatures{Prompt: "hello", Difficulty: DifficultySimple}, models, profiles, nil, "balanced").Selected; got != "cheap" {
+		t.Fatalf("simple request selected %q, want cheap", got)
+	}
+	if got := ScoreRequestFeatures(&RequestFeatures{Prompt: "prove this", Difficulty: DifficultyComplex}, models, profiles, nil, "balanced").Selected; got != "quality" {
+		t.Fatalf("complex request selected %q, want quality", got)
+	}
+}
+
+func TestAvailabilityReducesCandidateReliability(t *testing.T) {
+	profiles := map[string]ModelProfile{
+		"available": {Model: "available", Quality: map[string]float64{"default": .7}, Reliability: float64Ptr(1), Confidence: 1},
+		"busy":      {Model: "busy", Quality: map[string]float64{"default": .7}, Reliability: float64Ptr(1), Confidence: 1},
+	}
+	result := ScoreRequestFeatures(&RequestFeatures{Difficulty: DifficultyNormal}, []string{"available", "busy"}, profiles, map[string]float64{"available": 1, "busy": .1}, "balanced")
+	if result.Selected != "available" || result.Scores["busy"].Components["availability"] != .1 {
+		t.Fatalf("availability score = %+v", result)
+	}
+}
+
+func float64Ptr(value float64) *float64 { return &value }
+
 func TestCanonicalModelName(t *testing.T) {
 	for input, want := range map[string]string{
 		"openai/gpt-4o":          "gpt-4o",

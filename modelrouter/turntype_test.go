@@ -49,6 +49,26 @@ func TestExtractRequestFeatures(t *testing.T) {
 	}
 }
 
+func TestDetectTaskDifficulty(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *RequestFeatures
+		want TaskDifficulty
+	}{
+		{"simple chat", &RequestFeatures{Prompt: "hello"}, DifficultySimple},
+		{"normal code", &RequestFeatures{Prompt: "implement a function", TaskCategory: "code"}, DifficultyNormal},
+		{"complex tool request", &RequestFeatures{Prompt: "hello", HasTools: true}, DifficultyComplex},
+		{"complex reasoning", &RequestFeatures{Prompt: "prove this step by step"}, DifficultyComplex},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := DetectTaskDifficulty(test.in); got != test.want {
+				t.Fatalf("DetectTaskDifficulty() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestSpecialModelSelectionPrefersLowCost(t *testing.T) {
 	expensive, cheap := 10.0, .1
 	models := []string{"expensive", "cheap"}
