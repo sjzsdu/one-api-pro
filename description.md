@@ -1,23 +1,27 @@
 ## User request
 
-web上需要有个测验功能，用户输入一个prompt的时候，按照现有的策略，选出什么model。让用户有一个直观的感受，智能筛选的工作效果。但是不需要真实的访问大模型。
+将现有 auto router 从 demo 级重构成真正的策略引擎。当前问题不只是支持模型数量少（4个），而是核心能力缺失：新接入模型没有自动画像、没有任务难度判断、没有基于实时可用性/成本/质量的动态决策。没有这些，auto 只是把请求从"用户指定模型"换成了"规则或排序指定模型"，价值很有限。
 
-## Additional request
+一个可用的产品应当是：
 
-我希望在嵌入这个模式时，程序能够自动的去下载对应的 ONNX 文件保存到本地，这样就免去再 env 中配置了，env 只要指定模型名称就可以。
+1. 请求特征 → 任务类型 + 难度 + 上下文规模 + 图片/工具/代码需求
+2. 当前可用模型池（渠道健康、限流、上下文、能力）
+3. 动态评分（质量、价格、延迟、成功率、用户策略）
+4. 选择模型
+5. 失败时按能力约束换模型
+6. 用实际结果持续校准
 
-当前 env 配置（`MODEL_ROUTER_STRATEGY=embedding` 时生效）需要手动指定多个路径：
+关键点："当前可用模型池"不能被静态 JSON 圈死。模型画像应从渠道模型列表、供应商 catalog、管理员策略和运行指标动态构建；未知模型至少要有可配置的默认层级，不能全按 0.5 平分。
 
-```
-EMBEDDING_PROVIDER=onnx
-EMBEDDING_MODEL=jina-v2-code
-EMBEDDING_MODEL_PATH=/models/model.onnx
-EMBEDDING_TOKENIZER_PATH=/models/tokenizer.json
-ONNXRUNTIME_LIBRARY=/opt/onnxruntime/lib/libonnxruntime.dylib
-```
+具体重构方向：
 
-期望行为：用户只需配置 `EMBEDDING_MODEL=jina-v2-code`，程序自动根据模型名查找并下载对应的 ONNX 模型文件、tokenizer.json 等依赖到本地缓存目录，无需手动指定 `EMBEDDING_MODEL_PATH`、`EMBEDDING_TOKENIZER_PATH`、`ONNXRUNTIME_LIBRARY` 等路径。
+- 自动同步全部渠道模型，并统一别名
+- 为模型设置可运营的能力/质量/价格/延迟层级，而非硬编码 4 个
+- 用请求特征判定简单、普通、复杂、代码、长上下文、多模态、工具调用
+- 默认策略：简单任务优先便宜快，复杂任务优先高质量，预算/延迟受限时动态降级
+- 结合实时成功率、冷却、RPM、并发与渠道成本
+- 管理台展示"为什么选它、哪些候选被排除、预计成本和备选模型"
 
 ## Context
 
-（无额外上下文）
+No external resources referenced.
