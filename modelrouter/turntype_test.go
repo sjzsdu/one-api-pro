@@ -3,6 +3,8 @@ package modelrouter
 import (
 	"testing"
 
+	"github.com/modelbus/one-api-pro/channelrouter"
+	"github.com/modelbus/one-api-pro/model"
 	schema "github.com/modelbus/one-api-pro/relay/schema"
 )
 
@@ -58,5 +60,84 @@ func TestSpecialModelSelectionPrefersLowCost(t *testing.T) {
 	}
 	if got := ScoreModelProfiles("", models, profiles, "economy").Selected; got != "cheap" {
 		t.Fatalf("economy scoring selected %q, want cheap", got)
+	}
+}
+
+func TestDetectTaskDifficulty(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *RequestFeatures
+		want TaskDifficulty
+	}{
+		{"simple greeting", &RequestFeatures{Prompt: "hello"}, DifficultySimple},
+		{"normal sized answer", &RequestFeatures{Prompt: "explain this", MaxOutputTokens: 2000}, DifficultyNormal},
+		{"complex code", &RequestFeatures{Prompt: "implement and refactor this code", MaxOutputTokens: 5000}, DifficultyComplex},
+		{"tool result is cheap", &RequestFeatures{Prompt: "analyze", HasToolResult: true, MaxOutputTokens: 8000}, DifficultySimple},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := DetectTaskDifficulty(test.in); got != test.want {
+				t.Fatalf("DetectTaskDifficulty() = %s, want %s", got, test.want)
+			}
+		})
+	}
+}
+
+func TestDifficultyChangesScoringPriorities(t *testing.T) {
+	expensive, cheap := 10.0, .1
+	profiles := map[string]ModelProfile{
+		"quality": {Model: "quality", InputCost: &expensive, OutputCost: &expensive, Quality: map[string]float64{"default": .95}, Confidence: 1},
+		"cheap":   {Model: "cheap", InputCost: &cheap, OutputCost: &cheap, Quality: map[string]float64{"default": .55}, Confidence: 1},
+	}
+	names := []string{"quality", "cheap"}
+	if got := ScoreModelProfilesWithFeatures(&RequestFeatures{Prompt: "hello"}, names, profiles, nil, "balanced").Selected; got != "cheap" {
+		t.Fatalf("simple request selected %q, want cheap", got)
+	}
+	if got := ScoreModelProfilesWithFeatures(&RequestFeatures{Prompt: "implement code", MaxOutputTokens: 5000}, names, profiles, nil, "balanced").Selected; got != "quality" {
+		t.Fatalf("complex request selected %q, want quality", got)
+	}
+}
+
+func TestAvailabilityLowersCandidateReliability(t *testing.T) {
+	profiles := map[string]ModelProfile{
+		"healthy": {Model: "healthy", Quality: map[string]float64{"default": .7}, Confidence: 1},
+		"busy":    {Model: "busy", Quality: map[string]float64{"default": .7}, Confidence: 1},
+	}
+	result := ScoreModelProfilesWithFeatures(&RequestFeatures{Prompt: "explain this", MaxOutputTokens: 2000}, []string{"healthy", "busy"}, profiles, map[string]float64{"healthy": 1, "busy": 0}, "balanced")
+	if result.Selected != "healthy" {
+		t.Fatalf("availability did not downgrade busy candidate: %+v", result)
+	}
+	if result.Scores["busy"].Components["availability"] != 0 {
+		t.Fatalf("availability component = %v, want 0", result.Scores["busy"].Components)
+	}
+}
+
+func TestChannelAvailabilityUsesLiveLimits(t *testing.T) {
+	previous := channelrouter.DefaultRouter
+	router := channelrouter.NewChannelRouter()
+	channelrouter.DefaultRouter = router
+	t.Cleanup(func() { channelrouter.DefaultRouter = previous })
+
+	rpm, concurrency := 2, 1
+	channel := &model.Channel{Id: 42, Status: model.ChannelStatusEnabled, RPM: &rpm, MaxConcurrency: &concurrency}
+	if got := channelAvailability(channel); got != 1 {
+		t.Fatalf("healthy channel availability = %v, want 1", got)
+	}
+	router.IncrementRPM(channel.Id)
+	router.IncrementRPM(channel.Id)
+	if got := channelAvailability(channel); got != 0 {
+		t.Fatalf("RPM-saturated availability = %v, want 0", got)
+	}
+	router.RPM.Cleanup(channel.Id)
+	if !router.TryAcquireConcurrency(channel.Id, concurrency) {
+		t.Fatal("could not occupy concurrency for test")
+	}
+	if got := channelAvailability(channel); got != 0 {
+		t.Fatalf("concurrency-saturated availability = %v, want 0", got)
+	}
+	router.ReleaseConcurrency(channel.Id)
+	router.SetCooldown(channel.Id, 60, "test", 429)
+	if got := channelAvailability(channel); got != 0 {
+		t.Fatalf("cooling channel availability = %v, want 0", got)
 	}
 }

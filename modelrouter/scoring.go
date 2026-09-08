@@ -66,7 +66,7 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 			req.DisableSessionPin = true
 		}
 	}
-	result := ScoreModelProfiles(features.Prompt, candidates.Models, candidates.Profiles, policy)
+	result := ScoreModelProfilesWithFeatures(features, candidates.Models, candidates.Profiles, candidates.Availability, policy)
 	flatScores := make(map[string]float64, len(result.Scores))
 	var selectedComponents map[string]float64
 	for name, score := range result.Scores {
@@ -78,7 +78,7 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 	turnType := DetectTurnType(features)
 	RecordRoutingDecision(ctx, RoutingDecision{
 		Model: result.Selected, Score: result.Scores[result.Selected].Total, Scores: selectedComponents,
-		Strategy: r.Name(), Group: group, UserID: userID, TurnType: turnType, Features: features,
+		Strategy: r.Name(), Group: group, UserID: userID, TurnType: turnType, Difficulty: DetectTaskDifficulty(features), Features: features,
 		Candidates: candidates.Models, CandidateScores: flatScores, FilteredOut: candidates.FilteredOut,
 		FilterReasons: candidates.FilterReasons, Reason: "highest dynamic profile score (" + policy + ")",
 		LatencyMs: time.Since(started).Milliseconds(),
@@ -86,12 +86,23 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 	return result.Selected, nil
 }
 
+// ScoreModelProfiles is retained for callers that only have a prompt. New
+// routing paths should pass full request features and live availability.
 func ScoreModelProfiles(prompt string, names []string, profiles map[string]ModelProfile, policy string) ScoringResult {
+	return ScoreModelProfilesWithFeatures(&RequestFeatures{Prompt: prompt}, names, profiles, nil, policy)
+}
+
+func ScoreModelProfilesWithFeatures(features *RequestFeatures, names []string, profiles map[string]ModelProfile, availability map[string]float64, policy string) ScoringResult {
 	weights, ok := scorePolicies[policy]
 	if !ok {
 		weights = scorePolicies["balanced"]
 	}
-	category := detectTaskCategory(prompt)
+	if features == nil {
+		features = &RequestFeatures{}
+	}
+	category := detectTaskCategory(features.Prompt)
+	difficulty := DetectTaskDifficulty(features)
+	weights = weightsForDifficulty(weights, difficulty)
 	costs := make(map[string]*float64, len(names))
 	latencies := make(map[string]*float64, len(names))
 	for _, name := range names {
@@ -118,10 +129,19 @@ func ScoreModelProfiles(prompt string, names []string, profiles map[string]Model
 		if profile.Reliability != nil {
 			reliability = clamp01(*profile.Reliability)
 		}
+		availabilityScore := .5
+		if availability != nil {
+			if value, exists := availability[name]; exists {
+				availabilityScore = clamp01(value)
+			}
+		}
+		// Availability is an observation of the route now, while profile
+		// reliability is a long-lived model prior. Blend instead of replacing it.
+		reliability = .4*reliability + .6*availabilityScore
 		confidence := clamp01(profile.Confidence)
 		uncertainty := 1 - confidence
 		components := map[string]float64{
-			"quality": quality, "reliability": reliability,
+			"quality": quality, "reliability": reliability, "availability": availabilityScore,
 			"cost": costScores[name], "latency": latencyScores[name],
 			"uncertainty_penalty": uncertainty,
 		}
@@ -132,6 +152,20 @@ func ScoreModelProfiles(prompt string, names []string, profiles map[string]Model
 		}
 	}
 	return result
+}
+
+func weightsForDifficulty(base ScoreWeights, difficulty TaskDifficulty) ScoreWeights {
+	switch difficulty {
+	case DifficultySimple:
+		// Short, ordinary questions are better served by fast, inexpensive models.
+		return ScoreWeights{Quality: .20, Reliability: .20, Cost: .35, Latency: .25, Uncertainty: base.Uncertainty}
+	case DifficultyComplex:
+		// Complex reasoning, code, long context, and multimodal/tool work need a
+		// stronger quality prior; availability still prevents unhealthy choices.
+		return ScoreWeights{Quality: .65, Reliability: .23, Cost: .05, Latency: .07, Uncertainty: base.Uncertainty}
+	default:
+		return base
+	}
 }
 
 func normalizeLowerIsBetter(names []string, values map[string]*float64) map[string]float64 {

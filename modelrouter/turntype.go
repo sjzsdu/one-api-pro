@@ -33,6 +33,28 @@ func (t TurnType) String() string {
 	}
 }
 
+// TaskDifficulty is the amount of model capability a request is likely to
+// need. It is deliberately separate from TurnType: a tool-result turn is
+// usually cheap even if the conversation that produced it was complex.
+type TaskDifficulty int
+
+const (
+	DifficultySimple TaskDifficulty = iota
+	DifficultyNormal
+	DifficultyComplex
+)
+
+func (d TaskDifficulty) String() string {
+	switch d {
+	case DifficultySimple:
+		return "simple"
+	case DifficultyComplex:
+		return "complex"
+	default:
+		return "normal"
+	}
+}
+
 // RequestFeatures contains routing-relevant facts extracted from a request.
 // The explicit flags let callers avoid relying on prompt heuristics.
 type RequestFeatures struct {
@@ -135,6 +157,36 @@ func DetectTurnType(features *RequestFeatures) TurnType {
 		return TurnTypeTitleGen
 	}
 	return TurnTypeNormal
+}
+
+// DetectTaskDifficulty derives a small, explainable complexity tier from
+// request features. Explicitly cheap internal turns take precedence; images,
+// tools, long contexts, large answers, and code/reasoning work raise the tier.
+func DetectTaskDifficulty(features *RequestFeatures) TaskDifficulty {
+	if features == nil {
+		return DifficultyNormal
+	}
+	if DetectTurnType(features) != TurnTypeNormal {
+		return DifficultySimple
+	}
+	text := strings.ToLower(features.SystemPrompt + "\n" + features.Prompt)
+	complexSignals := 0
+	if features.HasImages || features.HasTools || features.HasToolResult {
+		complexSignals++
+	}
+	if features.EstimatedTokens >= 16_000 || features.MaxOutputTokens >= 4_000 {
+		complexSignals++
+	}
+	if containsAny(text, "code", "debug", "refactor", "implement", "algorithm", "proof", "reason", "analyze", "architecture", "代码", "调试", "重构", "实现", "算法", "证明", "推理", "分析", "架构") {
+		complexSignals++
+	}
+	if complexSignals >= 2 || features.EstimatedTokens >= 48_000 || features.MaxOutputTokens >= 8_000 {
+		return DifficultyComplex
+	}
+	if complexSignals == 1 || features.EstimatedTokens >= 4_000 || features.MaxOutputTokens >= 1_500 {
+		return DifficultyNormal
+	}
+	return DifficultySimple
 }
 
 func estimateTokens(text string) int {

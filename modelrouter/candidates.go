@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/modelbus/one-api-pro/channelrouter"
 	"github.com/modelbus/one-api-pro/model"
 )
 
@@ -14,6 +16,9 @@ type CandidateSet struct {
 	Profiles      map[string]ModelProfile
 	FilteredOut   []string
 	FilterReasons map[string]string
+	// Availability is a live, 0..1 health score derived from channels that
+	// can presently serve each model. It is intentionally not persisted.
+	Availability map[string]float64
 }
 
 func ResolveCandidates(ctx context.Context, group string, features *RequestFeatures) (CandidateSet, error) {
@@ -25,13 +30,17 @@ func ResolveCandidates(ctx context.Context, group string, features *RequestFeatu
 	if err != nil {
 		return CandidateSet{}, err
 	}
-	return resolveCandidateNames(ctx, names, features, provider)
+	return resolveCandidateNamesForGroup(ctx, group, names, features, provider)
 }
 
 func resolveCandidateNames(ctx context.Context, names []string, features *RequestFeatures, provider ModelProfileProvider) (CandidateSet, error) {
+	return resolveCandidateNamesForGroup(ctx, "", names, features, provider)
+}
+
+func resolveCandidateNamesForGroup(ctx context.Context, group string, names []string, features *RequestFeatures, provider ModelProfileProvider) (CandidateSet, error) {
 	unique := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
-	filtered := CandidateSet{Profiles: map[string]ModelProfile{}, FilterReasons: map[string]string{}}
+	filtered := CandidateSet{Profiles: map[string]ModelProfile{}, FilterReasons: map[string]string{}, Availability: map[string]float64{}}
 	for _, name := range names {
 		name = strings.TrimSpace(name)
 		if name == "" {
@@ -66,9 +75,56 @@ func resolveCandidateNames(ctx context.Context, names []string, features *Reques
 		}
 		filtered.Models = append(filtered.Models, name)
 		filtered.Profiles[name] = profile
+		filtered.Availability[name] = modelAvailability(group, name)
 	}
 	sort.Strings(filtered.FilteredOut)
 	return filtered, nil
+}
+
+func modelAvailability(group, name string) float64 {
+	if group == "" {
+		return .5
+	}
+	channels := model.GetChannelCandidates(group, name)
+	if len(channels) == 0 {
+		return .5
+	}
+	best := 0.0
+	for _, channel := range channels {
+		best = max(best, channelAvailability(channel))
+	}
+	return best
+}
+
+func channelAvailability(channel *model.Channel) float64 {
+	if channel == nil || channel.Status != model.ChannelStatusEnabled {
+		return 0
+	}
+	score := 1.0
+	router := channelrouter.DefaultRouter
+	if router != nil {
+		if router.IsInCooldown(channel.Id) {
+			return 0
+		}
+		if limit := channel.GetRPM(); limit > 0 {
+			score *= max(0, 1-float64(router.RPM.CurrentRPM(channel.Id))/float64(limit))
+		}
+		if limit := channel.GetMaxConcurrency(); limit > 0 {
+			score *= max(0, 1-float64(router.Concurrency.GetActiveCount(channel.Id))/float64(limit))
+		}
+	}
+	// A recent upstream error fades over ten minutes so stale incidents do not
+	// permanently distort routing.
+	if channel.LastErrorTime > 0 {
+		age := time.Since(time.Unix(channel.LastErrorTime, 0))
+		if age >= 0 && age < 10*time.Minute {
+			score *= .45 + .55*float64(age)/(10*float64(time.Minute))
+		}
+	}
+	if channel.ResponseTime > 0 {
+		score *= 1 / (1 + float64(channel.ResponseTime)/10_000)
+	}
+	return clamp01(score)
 }
 
 func incompatibilityReason(profile ModelProfile, features *RequestFeatures) string {
