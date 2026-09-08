@@ -85,7 +85,7 @@ func ModelRouterQuiz(c *gin.Context) {
 	}
 	strategy := strings.TrimSpace(req.Strategy)
 	if strategy == "" {
-		strategy = "balanced"
+		strategy = modelrouter.DefaultRouter.Name()
 	}
 	result, err := modelrouter.SimulateRouting(c.Request.Context(), group, req.Prompt, strategy)
 	if err != nil {
