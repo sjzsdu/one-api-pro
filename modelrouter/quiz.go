@@ -54,7 +54,7 @@ func SimulateRouting(ctx context.Context, group, prompt, strategy string) (QuizR
 			Reason:          "selected by the active embedding semantic router",
 			AvailableModels: candidates.Models, FilteredOutModels: candidates.FilteredOut,
 			FilterReasons: candidates.FilterReasons, Strategy: strategy,
-			TurnType: DetectTurnType(features).String(), ClusterMatches: matches,
+			TurnType: DetectTurnType(features).String(), Difficulty: DetectTaskDifficulty(features), ClusterMatches: matches,
 		}, nil
 	}
 	policy := "balanced"
@@ -65,7 +65,7 @@ func SimulateRouting(ctx context.Context, group, prompt, strategy string) (QuizR
 	if turnType != TurnTypeNormal {
 		policy = "economy"
 	}
-	scored := ScoreModelProfilesForRequest(features, candidates.Models, candidates.Profiles, candidates.Availability, policy)
+	scored := ScoreRequestProfiles(features, candidates.Models, candidates.Profiles, candidates.Availability, policy)
 	flat := make(map[string]float64, len(scored.Scores))
 	for name, score := range scored.Scores {
 		flat[name] = score.Total
@@ -75,7 +75,7 @@ func SimulateRouting(ctx context.Context, group, prompt, strategy string) (QuizR
 		SelectedModel: scored.Selected, ModelScores: flat, ScoreDetails: scored.Scores,
 		Reason:          "selected from the current group by dynamic profile score (" + policy + ")",
 		AvailableModels: candidates.Models, FilteredOutModels: candidates.FilteredOut,
-		FilterReasons: candidates.FilterReasons, Strategy: strategy, TurnType: turnType.String(), Difficulty: scored.Difficulty,
+		FilterReasons: candidates.FilterReasons, Strategy: strategy, TurnType: turnType.String(), Difficulty: DetectTaskDifficulty(features),
 	}, nil
 }
 
@@ -92,7 +92,7 @@ func buildQuizResult(prompt string, available, candidates []string) QuizResult {
 	for _, model := range candidates {
 		profiles[model] = genericProfile(model)
 	}
-	scored := ScoreModelProfilesForRequest(features, candidates, profiles, nil, policy)
+	scored := ScoreRequestProfiles(features, candidates, profiles, nil, policy)
 	modelScores := make(map[string]float64, len(scored.Scores))
 	for name, score := range scored.Scores {
 		modelScores[name] = score.Total
@@ -105,7 +105,7 @@ func buildQuizResult(prompt string, available, candidates []string) QuizResult {
 		Reason:            "selected from the dynamic profile score (" + policy + ")",
 		AvailableModels:   append([]string(nil), candidates...),
 		FilteredOutModels: difference(available, candidates),
-		Strategy:          "scoring", Difficulty: scored.Difficulty,
+		Strategy:          "scoring", Difficulty: DetectTaskDifficulty(features),
 		TurnType: turnType.String(),
 	}
 }
