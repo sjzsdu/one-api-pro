@@ -14,6 +14,7 @@ type QuizResult struct {
 	SelectedModel     string                    `json:"selected_model"`
 	ModelScores       map[string]float64        `json:"model_scores"`
 	ScoreDetails      map[string]CandidateScore `json:"score_details"`
+	ClusterMatches    []ClusterMatch            `json:"cluster_matches,omitempty"`
 	Reason            string                    `json:"reason"`
 	AvailableModels   []string                  `json:"available_models"`
 	FilteredOutModels []string                  `json:"filtered_out_models"`
@@ -30,6 +31,30 @@ func SimulateRouting(ctx context.Context, group, prompt, strategy string) (QuizR
 	}
 	if len(candidates.Models) == 0 {
 		return QuizResult{}, fmt.Errorf("no compatible models for group %s", group)
+	}
+	if strategy == "embedding" {
+		router, ok := DefaultRouter.(*EmbeddingModelRouter)
+		if !ok {
+			return QuizResult{}, fmt.Errorf("embedding router is not initialized")
+		}
+		scores, matches, err := router.ScoreCandidates(ctx, prompt, candidates.Models)
+		if err != nil {
+			return QuizResult{}, err
+		}
+		selected := candidates.Models[0]
+		for _, model := range candidates.Models[1:] {
+			if scores[model] > scores[selected] {
+				selected = model
+			}
+		}
+		return QuizResult{
+			Prompt: prompt, Group: group, DetectedCategory: detectTaskCategory(prompt),
+			SelectedModel: selected, ModelScores: scores,
+			Reason:          "selected by the active embedding semantic router",
+			AvailableModels: candidates.Models, FilteredOutModels: candidates.FilteredOut,
+			FilterReasons: candidates.FilterReasons, Strategy: strategy,
+			TurnType: DetectTurnType(features).String(), ClusterMatches: matches,
+		}, nil
 	}
 	policy := "balanced"
 	if _, ok := scorePolicies[strategy]; ok {

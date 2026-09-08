@@ -64,3 +64,16 @@ func TestUnknownModelsUseNeutralPriorAndStableTieBreak(t *testing.T) {
 		t.Fatal("unknown model did not receive neutral quality prior")
 	}
 }
+
+func TestCanonicalModelName(t *testing.T) {
+	for input, want := range map[string]string{
+		"openai/gpt-4o":          "gpt-4o",
+		"deepseek/deepseek-chat": "deepseek-chat",
+		"~openai/gpt-4o-mini":    "gpt-4o-mini",
+		"gpt-4o":                 "gpt-4o",
+	} {
+		if got := CanonicalModelName(input); got != want {
+			t.Errorf("CanonicalModelName(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
