@@ -14,6 +14,7 @@ type RoutingDecision struct {
 	Scores         map[string]float64 `json:"scores,omitempty"`
 	FilteredOut    []string           `json:"filtered_out,omitempty"`
 	TurnType       TurnType           `json:"turn_type"`
+	Difficulty     TaskDifficulty     `json:"difficulty"`
 	Features       *RequestFeatures   `json:"features,omitempty"`
 	ClusterMatches []ClusterMatch     `json:"cluster_matches,omitempty"`
 	Reason         string             `json:"reason"`
