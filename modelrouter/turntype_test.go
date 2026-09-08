@@ -60,3 +60,30 @@ func TestSpecialModelSelectionPrefersLowCost(t *testing.T) {
 		t.Fatalf("economy scoring selected %q, want cheap", got)
 	}
 }
+
+func TestDetectTaskDifficulty(t *testing.T) {
+	if got := DetectTaskDifficulty(&RequestFeatures{Prompt: "hello", EstimatedTokens: 20, MaxOutputTokens: 32}); got != TaskDifficultySimple {
+		t.Fatalf("simple request difficulty = %q", got)
+	}
+	if got := DetectTaskDifficulty(&RequestFeatures{Prompt: "refactor this module step by step", EstimatedTokens: 100, MaxOutputTokens: 100}); got != TaskDifficultyComplex {
+		t.Fatalf("reasoning request difficulty = %q", got)
+	}
+	if got := DetectTaskDifficulty(&RequestFeatures{Prompt: "summarize this", EstimatedTokens: 2_000, MaxOutputTokens: 200}); got != TaskDifficultyNormal {
+		t.Fatalf("ordinary request difficulty = %q", got)
+	}
+}
+
+func TestDifficultyChangesBalancedScoring(t *testing.T) {
+	expensive, cheap := 10.0, .1
+	profiles := map[string]ModelProfile{
+		"quality": {Model: "quality", Quality: map[string]float64{"default": .95}, InputCost: &expensive, OutputCost: &expensive, Confidence: 1},
+		"cheap":   {Model: "cheap", Quality: map[string]float64{"default": .55}, InputCost: &cheap, OutputCost: &cheap, Confidence: 1},
+	}
+	names := []string{"quality", "cheap"}
+	if got := ScoreModelProfilesWithFeatures(&RequestFeatures{Prompt: "hello", EstimatedTokens: 10, MaxOutputTokens: 10}, names, profiles, nil, "balanced").Selected; got != "cheap" {
+		t.Fatalf("simple request selected %q, want cheap", got)
+	}
+	if got := ScoreModelProfilesWithFeatures(&RequestFeatures{Prompt: "prove this step by step", EstimatedTokens: 10, MaxOutputTokens: 10}, names, profiles, nil, "balanced").Selected; got != "quality" {
+		t.Fatalf("complex request selected %q, want quality", got)
+	}
+}

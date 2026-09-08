@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/modelbus/one-api-pro/channelrouter"
 	"github.com/modelbus/one-api-pro/model"
 )
 
@@ -14,6 +16,7 @@ type CandidateSet struct {
 	Profiles      map[string]ModelProfile
 	FilteredOut   []string
 	FilterReasons map[string]string
+	Availability  map[string]float64
 }
 
 func ResolveCandidates(ctx context.Context, group string, features *RequestFeatures) (CandidateSet, error) {
@@ -25,13 +28,18 @@ func ResolveCandidates(ctx context.Context, group string, features *RequestFeatu
 	if err != nil {
 		return CandidateSet{}, err
 	}
-	return resolveCandidateNames(ctx, names, features, provider)
+	set, err := resolveCandidateNames(ctx, names, features, provider)
+	if err != nil {
+		return CandidateSet{}, err
+	}
+	set.applyChannelAvailability(group)
+	return set, nil
 }
 
 func resolveCandidateNames(ctx context.Context, names []string, features *RequestFeatures, provider ModelProfileProvider) (CandidateSet, error) {
 	unique := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
-	filtered := CandidateSet{Profiles: map[string]ModelProfile{}, FilterReasons: map[string]string{}}
+	filtered := CandidateSet{Profiles: map[string]ModelProfile{}, FilterReasons: map[string]string{}, Availability: map[string]float64{}}
 	for _, name := range names {
 		name = strings.TrimSpace(name)
 		if name == "" {
@@ -69,6 +77,64 @@ func resolveCandidateNames(ctx context.Context, names []string, features *Reques
 	}
 	sort.Strings(filtered.FilteredOut)
 	return filtered, nil
+}
+
+// applyChannelAvailability keeps only models with at least one serviceable
+// channel in this group and records the best live health score for scoring.
+func (set *CandidateSet) applyChannelAvailability(group string) {
+	if set.Availability == nil {
+		set.Availability = make(map[string]float64, len(set.Models))
+	}
+	available := make([]string, 0, len(set.Models))
+	for _, name := range set.Models {
+		best := 0.0
+		for _, channel := range model.GetChannelCandidates(group, name) {
+			best = max(best, channelAvailability(channel))
+		}
+		if best == 0 {
+			set.FilteredOut = append(set.FilteredOut, name)
+			set.FilterReasons[name] = "no serviceable channel"
+			delete(set.Profiles, name)
+			continue
+		}
+		set.Availability[name] = best
+		available = append(available, name)
+	}
+	set.Models = available
+	sort.Strings(set.FilteredOut)
+}
+
+func channelAvailability(channel *model.Channel) float64 {
+	if channel == nil || channel.Status != model.ChannelStatusEnabled {
+		return 0
+	}
+	// Model routing can be initialized before the channel router during
+	// startup. Preserve the channel as viable until live counters exist.
+	if channelrouter.DefaultRouter == nil {
+		return 1
+	}
+	router := channelrouter.DefaultRouter
+	if router.IsInCooldown(channel.Id) || router.Concurrency.IsAtCapacity(channel.Id, channel.GetMaxConcurrency()) ||
+		(channel.GetRPM() > 0 && router.RPM.CurrentRPM(channel.Id) >= channel.GetRPM()) {
+		return 0
+	}
+	health := 1.0
+	if maxConcurrency := channel.GetMaxConcurrency(); maxConcurrency > 0 {
+		health *= 1 - .5*min(1, float64(router.Concurrency.GetActiveCount(channel.Id))/float64(maxConcurrency))
+	}
+	if maxRPM := channel.GetRPM(); maxRPM > 0 {
+		health *= 1 - .4*min(1, float64(router.RPM.CurrentRPM(channel.Id))/float64(maxRPM))
+	}
+	if channel.LastErrorTime > 0 {
+		age := time.Since(time.Unix(channel.LastErrorTime, 0))
+		if age < 10*time.Minute {
+			health *= 1 - .5*(1-age.Minutes()/10)
+		}
+	}
+	if channel.ResponseTime > 0 {
+		health *= 1 / (1 + float64(channel.ResponseTime)/5_000)
+	}
+	return clamp01(health)
 }
 
 func incompatibilityReason(profile ModelProfile, features *RequestFeatures) string {

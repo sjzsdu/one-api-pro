@@ -97,7 +97,11 @@ func (r *ScoringModelRouter) SelectFallbackModel(ctx context.Context, group, fai
 	if DetectTurnType(features) != TurnTypeNormal {
 		policy = "economy"
 	}
-	result := ScoreModelProfiles(features.Prompt, remaining, candidates.Profiles, policy)
+	availability := make(map[string]float64, len(remaining))
+	for _, name := range remaining {
+		availability[name] = candidates.Availability[name]
+	}
+	result := ScoreModelProfilesWithFeatures(features, remaining, candidates.Profiles, availability, policy)
 	return result.Selected, decision, nil
 }
 

@@ -5,6 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/modelbus/one-api-pro/channelrouter"
+	"github.com/modelbus/one-api-pro/model"
 )
 
 func TestCandidateSetUsesOnlyProvidedGroupModels(t *testing.T) {
@@ -21,6 +25,35 @@ func TestCandidateSetUsesOnlyProvidedGroupModels(t *testing.T) {
 	}
 	if _, exists := got.Profiles["outside-model"]; exists {
 		t.Fatal("candidate resolver introduced a model outside the group")
+	}
+}
+
+func TestChannelAvailabilityUsesLiveLimitsAndHealth(t *testing.T) {
+	router := channelrouter.NewChannelRouter()
+	previous := channelrouter.DefaultRouter
+	channelrouter.DefaultRouter = router
+	t.Cleanup(func() { channelrouter.DefaultRouter = previous })
+	maxConcurrency, rpm := 2, 4
+	channel := &model.Channel{Id: 91, Status: model.ChannelStatusEnabled, MaxConcurrency: &maxConcurrency, RPM: &rpm}
+	if got := channelAvailability(channel); got != 1 {
+		t.Fatalf("healthy availability = %v, want 1", got)
+	}
+	router.SetCooldown(channel.Id, 10, "test", 429)
+	if got := channelAvailability(channel); got != 0 {
+		t.Fatalf("cooldown availability = %v, want 0", got)
+	}
+	// A different live channel demonstrates gradual health degradation.
+	channel.Id = 92
+	channel.ResponseTime = 5_000
+	channel.LastErrorTime = time.Now().Unix()
+	if got := channelAvailability(channel); got <= 0 || got >= 1 {
+		t.Fatalf("degraded availability = %v, want between 0 and 1", got)
+	}
+	for i := 0; i < rpm; i++ {
+		router.IncrementRPM(channel.Id)
+	}
+	if got := channelAvailability(channel); got != 0 {
+		t.Fatalf("RPM-saturated availability = %v, want 0", got)
 	}
 }
 
