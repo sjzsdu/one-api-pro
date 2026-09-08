@@ -39,6 +39,23 @@ func TestEmbeddingScorerUsesQualityCostAndLatency(t *testing.T) {
 	require.Greater(t, scores["cheap"], scores["quality"])
 }
 
+func TestEmbeddingScorerUsesCanonicalNamesForProviderQualifiedModels(t *testing.T) {
+	artifacts := &Artifacts{
+		Centroids:    [][]float64{{1, 0}},
+		QualityMeans: map[string][]float64{"gpt-4o": {.95}, "gpt-4o-mini": {.25}},
+		Models: map[string]ModelMetadata{
+			"gpt-4o":      {Cost: 2, Latency: .5},
+			"gpt-4o-mini": {Cost: .1, Latency: .2},
+		},
+	}
+	scorer, err := NewEmbeddingScorer(staticEmbedder{1, 0}, artifacts, 1)
+	require.NoError(t, err)
+	scores, matches, err := scorer.ScoreWithMatches(context.Background(), "prompt", []string{"openai/gpt-4o", "openai/gpt-4o-mini"})
+	require.NoError(t, err)
+	require.Len(t, matches, 1)
+	require.Greater(t, scores["openai/gpt-4o"], scores["openai/gpt-4o-mini"])
+}
+
 func TestAPIEmbedderOpenAICompatibleResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer secret", r.Header.Get("Authorization"))
