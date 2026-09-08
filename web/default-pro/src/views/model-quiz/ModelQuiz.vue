@@ -86,7 +86,7 @@
                   :style="{ width: (item.score / maxScore * 100) + '%' }"
                 />
               </div>
-              <div class="score-value">{{ item.score.toFixed(1) }}</div>
+              <div class="score-value">{{ item.score.toFixed(3) }}</div>
             </div>
           </div>
         </div>
@@ -105,6 +105,14 @@
               <div class="detail-item">
                 <span class="detail-label">使用策略：</span>
                 <span>{{ result.strategy }}</span>
+              </div>
+              <div v-if="result.cluster_matches?.length" class="detail-item cluster-matches">
+                <span class="detail-label">语义簇匹配：</span>
+                <span
+                  v-for="match in result.cluster_matches"
+                  :key="match.cluster"
+                  class="cluster-match"
+                >簇 {{ match.cluster }}：{{ match.similarity.toFixed(4) }}</span>
               </div>
             </a-collapse-item>
           </a-collapse>
@@ -375,6 +383,16 @@ function getTurnTypeLabel(turnType) {
   display: flex;
   padding: 8px 0;
   border-bottom: 1px solid #e5e6eb;
+}
+
+.cluster-matches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cluster-match {
+  color: #4e5969;
 }
 
 .detail-item:last-child {

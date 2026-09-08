@@ -70,18 +70,25 @@ func NewEmbeddingScorer(embedder Embedder, artifacts *Artifacts, topP int) (*Emb
 
 // Score embeds a prompt once and scores only models available to the caller.
 func (s *EmbeddingScorer) Score(ctx context.Context, prompt string, models []string) (map[string]float64, error) {
+	scores, _, err := s.ScoreWithMatches(ctx, prompt, models)
+	return scores, err
+}
+
+// ScoreWithMatches returns the same scores used for production selection plus
+// the matched semantic clusters for route explanations and the model quiz.
+func (s *EmbeddingScorer) ScoreWithMatches(ctx context.Context, prompt string, models []string) (map[string]float64, []ClusterMatch, error) {
 	embedding, err := s.Embedder.Embed(ctx, prompt)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	matches := s.Clusters.MatchClusters(embedding)
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("embedding does not match artifact dimensions")
+		return nil, nil, fmt.Errorf("embedding does not match artifact dimensions")
 	}
 	costs := make(map[string]*float64, len(models))
 	latencies := make(map[string]*float64, len(models))
 	for _, name := range models {
-		if metadata, ok := s.Artifacts.Models[name]; ok {
+		if metadata, ok := s.Artifacts.Models[CanonicalModelName(name)]; ok {
 			cost, latency := metadata.Cost, metadata.Latency
 			costs[name], latencies[name] = &cost, &latency
 		}
@@ -90,8 +97,9 @@ func (s *EmbeddingScorer) Score(ctx context.Context, prompt string, models []str
 	latencyScores := normalizeLowerIsBetter(models, latencies)
 	scores := make(map[string]float64, len(models))
 	for _, model := range models {
+		canonicalName := CanonicalModelName(model)
 		quality := .5
-		if qualities, known := s.Artifacts.QualityMeans[model]; known {
+		if qualities, known := s.Artifacts.QualityMeans[canonicalName]; known {
 			var weighted, weight float64
 			for _, match := range matches {
 				if match.Cluster < len(qualities) {
@@ -106,5 +114,5 @@ func (s *EmbeddingScorer) Score(ctx context.Context, prompt string, models []str
 		}
 		scores[model] = s.QualityWeight*quality + s.CostWeight*costScores[model] + s.SpeedWeight*latencyScores[model]
 	}
-	return scores, nil
+	return scores, matches, nil
 }
