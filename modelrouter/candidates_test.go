@@ -77,3 +77,29 @@ func TestCanonicalModelName(t *testing.T) {
 		}
 	}
 }
+func TestDifficultyChangesBalancedSelection(t *testing.T) {
+	cheap, expensive := .1, 10.0
+	profiles := map[string]ModelProfile{
+		"cheap":   {Model: "cheap", InputCost: &cheap, OutputCost: &cheap, Quality: map[string]float64{"default": .5}, Confidence: 1},
+		"quality": {Model: "quality", InputCost: &expensive, OutputCost: &expensive, Quality: map[string]float64{"default": .95}, Confidence: 1},
+	}
+	if got := ScoreRequestProfiles(&RequestFeatures{Prompt: "hello", Difficulty: TaskDifficultySimple}, []string{"cheap", "quality"}, profiles, nil, "balanced").Selected; got != "cheap" {
+		t.Fatalf("simple selected %s", got)
+	}
+	if got := ScoreRequestProfiles(&RequestFeatures{Prompt: "analyze", Difficulty: TaskDifficultyComplex}, []string{"cheap", "quality"}, profiles, nil, "balanced").Selected; got != "quality" {
+		t.Fatalf("complex selected %s", got)
+	}
+}
+
+func TestAvailabilityLowersCandidateScore(t *testing.T) {
+	profiles := map[string]ModelProfile{
+		"healthy":   {Model: "healthy", Quality: map[string]float64{"default": .8}, Reliability: floatPtr(.9), Confidence: 1},
+		"unhealthy": {Model: "unhealthy", Quality: map[string]float64{"default": .9}, Reliability: floatPtr(.9), Confidence: 1},
+	}
+	result := ScoreRequestProfiles(&RequestFeatures{Prompt: "analyze", Difficulty: TaskDifficultyComplex}, []string{"healthy", "unhealthy"}, profiles, map[string]float64{"healthy": 1, "unhealthy": 0}, "balanced")
+	if result.Selected != "healthy" || result.Scores["unhealthy"].Components["availability"] != 0 {
+		t.Fatalf("availability was not applied: %+v", result)
+	}
+}
+
+func floatPtr(v float64) *float64 { return &v }

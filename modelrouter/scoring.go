@@ -66,7 +66,7 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 			req.DisableSessionPin = true
 		}
 	}
-	result := ScoreModelProfiles(features.Prompt, candidates.Models, candidates.Profiles, policy)
+	result := ScoreRequestProfiles(features, candidates.Models, candidates.Profiles, candidates.Availability, policy)
 	flatScores := make(map[string]float64, len(result.Scores))
 	var selectedComponents map[string]float64
 	for name, score := range result.Scores {
@@ -86,12 +86,33 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 	return result.Selected, nil
 }
 
-func ScoreModelProfiles(prompt string, names []string, profiles map[string]ModelProfile, policy string) ScoringResult {
+// ScoreRequestProfiles is the feature-aware scoring entry point used by the
+// router. It changes the policy weights for request difficulty and folds live
+// channel health into reliability.
+func ScoreRequestProfiles(features *RequestFeatures, names []string, profiles map[string]ModelProfile, availability map[string]float64, policy string) ScoringResult {
 	weights, ok := scorePolicies[policy]
 	if !ok {
 		weights = scorePolicies["balanced"]
 	}
-	category := detectTaskCategory(prompt)
+	if features == nil {
+		features = &RequestFeatures{}
+	}
+	category := features.Category
+	if category == "" {
+		category = detectTaskCategory(features.Prompt)
+	}
+	difficulty := features.Difficulty
+	if difficulty == "" {
+		difficulty = DetectTaskDifficulty(features)
+	}
+	if policy == "balanced" {
+		switch difficulty {
+		case TaskDifficultySimple:
+			weights = ScoreWeights{Quality: .20, Reliability: .20, Cost: .35, Latency: .25, Uncertainty: .10}
+		case TaskDifficultyComplex:
+			weights = ScoreWeights{Quality: .65, Reliability: .20, Cost: .05, Latency: .10, Uncertainty: .10}
+		}
+	}
 	costs := make(map[string]*float64, len(names))
 	latencies := make(map[string]*float64, len(names))
 	for _, name := range names {
@@ -118,12 +139,20 @@ func ScoreModelProfiles(prompt string, names []string, profiles map[string]Model
 		if profile.Reliability != nil {
 			reliability = clamp01(*profile.Reliability)
 		}
+		available := 1.0
+		if availability != nil {
+			if value, exists := availability[name]; exists {
+				available = clamp01(value)
+			}
+		}
+		reliability *= available
 		confidence := clamp01(profile.Confidence)
 		uncertainty := 1 - confidence
 		components := map[string]float64{
 			"quality": quality, "reliability": reliability,
 			"cost": costScores[name], "latency": latencyScores[name],
 			"uncertainty_penalty": uncertainty,
+			"availability":        available,
 		}
 		total := weights.Quality*quality + weights.Reliability*reliability + weights.Cost*costScores[name] + weights.Latency*latencyScores[name] - weights.Uncertainty*uncertainty
 		result.Scores[name] = CandidateScore{Total: total, Components: components, Confidence: confidence, ProfileData: append([]string(nil), profile.Sources...)}
@@ -132,6 +161,12 @@ func ScoreModelProfiles(prompt string, names []string, profiles map[string]Model
 		}
 	}
 	return result
+}
+
+// ScoreModelProfiles remains for callers that only have prompt text and a
+// static profile map. New routing code should use ScoreRequestProfiles.
+func ScoreModelProfiles(prompt string, names []string, profiles map[string]ModelProfile, policy string) ScoringResult {
+	return ScoreRequestProfiles(&RequestFeatures{Prompt: prompt}, names, profiles, nil, policy)
 }
 
 func normalizeLowerIsBetter(names []string, values map[string]*float64) map[string]float64 {

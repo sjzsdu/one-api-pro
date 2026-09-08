@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/modelbus/one-api-pro/channelrouter"
 	"github.com/modelbus/one-api-pro/model"
 )
 
@@ -14,6 +16,7 @@ type CandidateSet struct {
 	Profiles      map[string]ModelProfile
 	FilteredOut   []string
 	FilterReasons map[string]string
+	Availability  map[string]float64
 }
 
 func ResolveCandidates(ctx context.Context, group string, features *RequestFeatures) (CandidateSet, error) {
@@ -25,7 +28,12 @@ func ResolveCandidates(ctx context.Context, group string, features *RequestFeatu
 	if err != nil {
 		return CandidateSet{}, err
 	}
-	return resolveCandidateNames(ctx, names, features, provider)
+	set, err := resolveCandidateNames(ctx, names, features, provider)
+	if err != nil {
+		return CandidateSet{}, err
+	}
+	set.Availability = scoreCandidateAvailability(group, set.Models)
+	return set, nil
 }
 
 func resolveCandidateNames(ctx context.Context, names []string, features *RequestFeatures, provider ModelProfileProvider) (CandidateSet, error) {
@@ -69,6 +77,53 @@ func resolveCandidateNames(ctx context.Context, names []string, features *Reques
 	}
 	sort.Strings(filtered.FilteredOut)
 	return filtered, nil
+}
+
+func scoreCandidateAvailability(group string, names []string) map[string]float64 {
+	availability := make(map[string]float64, len(names))
+	now := time.Now()
+	for _, name := range names {
+		best := 0.0
+		for _, channel := range model.GetChannelCandidates(group, name) {
+			if channel.Status != model.ChannelStatusEnabled || channel.GetIsFallback() {
+				continue
+			}
+			health := 1.0
+			if channelrouter.DefaultRouter != nil {
+				if channelrouter.DefaultRouter.IsInCooldown(channel.Id) {
+					continue
+				}
+				if maxRPM := channel.GetRPM(); maxRPM > 0 {
+					used := channelrouter.DefaultRouter.RPM.CurrentRPM(channel.Id)
+					if used >= maxRPM {
+						continue
+					}
+					health *= 1 - 0.45*float64(used)/float64(maxRPM)
+				}
+				if maxConcurrency := channel.GetMaxConcurrency(); maxConcurrency > 0 {
+					active := channelrouter.DefaultRouter.Concurrency.GetActiveCount(channel.Id)
+					if active >= int64(maxConcurrency) {
+						continue
+					}
+					health *= 1 - 0.45*float64(active)/float64(maxConcurrency)
+				}
+			}
+			if channel.LastErrorTime > 0 {
+				age := now.Sub(time.Unix(channel.LastErrorTime, 0))
+				if age >= 0 && age < 10*time.Minute {
+					health *= 0.5 + 0.5*float64(age)/(10*60)
+				}
+			}
+			if channel.ResponseTime > 0 {
+				health *= 1 / (1 + float64(channel.ResponseTime)/10_000)
+			}
+			if health > best {
+				best = health
+			}
+		}
+		availability[name] = best
+	}
+	return availability
 }
 
 func incompatibilityReason(profile ModelProfile, features *RequestFeatures) string {
