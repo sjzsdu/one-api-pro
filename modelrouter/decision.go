@@ -30,6 +30,8 @@ type RoutingDecision struct {
 	CandidateScores map[string]float64 `json:"candidate_scores,omitempty"`
 	FilterReasons   map[string]string  `json:"filter_reasons,omitempty"`
 	Error           string             `json:"error,omitempty"`
+	Alternatives    []string           `json:"alternatives,omitempty"`
+	EstimatedCost   float64            `json:"estimated_cost,omitempty"`
 }
 
 // DecisionStore is a bounded in-memory ring of recent routing decisions. It
@@ -94,6 +96,7 @@ func cloneDecision(decision RoutingDecision) RoutingDecision {
 	decision.FilteredOut = append([]string(nil), decision.FilteredOut...)
 	decision.Candidates = append([]string(nil), decision.Candidates...)
 	decision.ClusterMatches = append([]ClusterMatch(nil), decision.ClusterMatches...)
+	decision.Alternatives = append([]string(nil), decision.Alternatives...)
 	if decision.Features != nil {
 		features := *decision.Features
 		decision.Features = &features

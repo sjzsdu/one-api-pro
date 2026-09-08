@@ -106,6 +106,22 @@
                 <span class="detail-label">使用策略：</span>
                 <span>{{ result.strategy }}</span>
               </div>
+              <div class="detail-item">
+                <span class="detail-label">任务难度：</span>
+                <span>{{ getComplexityLabel(result.complexity) }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">预计成本：</span>
+                <span>${{ Number(result.estimated_cost || 0).toFixed(6) }}</span>
+              </div>
+              <div v-if="result.alternatives?.length" class="detail-item">
+                <span class="detail-label">备选模型：</span>
+                <span>{{ result.alternatives.join('、') }}</span>
+              </div>
+              <div v-if="Object.keys(result.filter_reasons || {}).length" class="detail-item">
+                <span class="detail-label">候选排除原因：</span>
+                <span>{{ formatFilterReasons(result.filter_reasons) }}</span>
+              </div>
               <div v-if="result.cluster_matches?.length" class="detail-item cluster-matches">
                 <span class="detail-label">语义簇匹配：</span>
                 <span
@@ -204,6 +220,14 @@ function getTurnTypeLabel(turnType) {
     title_generation: '标题生成',
   }
   return labels[turnType] || turnType
+}
+
+function getComplexityLabel(complexity) {
+  return { simple: '简单', normal: '普通', complex: '复杂' }[complexity] || complexity || '普通'
+}
+
+function formatFilterReasons(reasons) {
+  return Object.entries(reasons).map(([model, reason]) => `${model}：${reason}`).join('；')
 }
 </script>
 

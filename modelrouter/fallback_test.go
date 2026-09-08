@@ -45,6 +45,17 @@ func TestClassifyFailure(t *testing.T) {
 	}
 }
 
+func TestFallbackRequiresAdvertisedCapabilityAfterFailure(t *testing.T) {
+	features := &RequestFeatures{HasImages: true}
+	decision := ClassifyFailure(FallbackFailure{StatusCode: 400, Message: "vision is not supported"}, features)
+	if supportsFallbackConstraints(ModelProfile{Vision: CapabilityUnknown}, features, decision) {
+		t.Fatal("unknown vision capability must not be selected after a vision failure")
+	}
+	if !supportsFallbackConstraints(ModelProfile{Vision: CapabilitySupported}, features, decision) {
+		t.Fatal("supported vision capability was rejected")
+	}
+}
+
 func TestCapabilityFallbackFiltersIncompatibleModels(t *testing.T) {
 	features := &RequestFeatures{HasImages: true, HasTools: true}
 	provider := staticProfileProvider{

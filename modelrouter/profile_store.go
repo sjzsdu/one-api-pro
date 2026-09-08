@@ -31,7 +31,7 @@ func (s *ProfileStore) Replace(profiles []ModelProfile) {
 		profile.Model = name
 		profile.Quality = cloneFloatMap(profile.Quality)
 		profile.Sources = append([]string(nil), profile.Sources...)
-		next[name] = profile
+		next[CanonicalModelName(name)] = profile
 	}
 	s.mu.Lock()
 	s.profiles = next
@@ -43,7 +43,7 @@ func (s *ProfileStore) Snapshot(names []string) map[string]ModelProfile {
 	defer s.mu.RUnlock()
 	result := make(map[string]ModelProfile, len(names))
 	for _, name := range names {
-		if profile, ok := s.profiles[name]; ok {
+		if profile, ok := s.profiles[CanonicalModelName(name)]; ok {
 			profile.Quality = cloneFloatMap(profile.Quality)
 			profile.Sources = append([]string(nil), profile.Sources...)
 			result[name] = profile

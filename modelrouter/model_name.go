@@ -13,5 +13,5 @@ func CanonicalModelName(name string) string {
 	if slash := strings.IndexByte(name, '/'); slash >= 0 && slash+1 < len(name) {
 		return name[slash+1:]
 	}
-	return name
+	return strings.TrimSpace(name)
 }

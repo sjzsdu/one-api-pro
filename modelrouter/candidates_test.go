@@ -60,8 +60,15 @@ func TestUnknownModelsUseNeutralPriorAndStableTieBreak(t *testing.T) {
 	if result.Selected != "alpha" {
 		t.Fatalf("stable tie-break selected %q, want alpha", result.Selected)
 	}
-	if result.Scores["alpha"].Components["quality"] != .5 {
-		t.Fatal("unknown model did not receive neutral quality prior")
+	if result.Scores["alpha"].Components["quality"] != .55 {
+		t.Fatal("unknown model did not receive the operational default prior")
+	}
+}
+
+func TestNewModelGetsNameDerivedProfile(t *testing.T) {
+	profile := genericProfile("vendor/new-coder-pro")
+	if profile.Quality["code"] <= .8 || profile.Confidence <= .5 {
+		t.Fatalf("derived profile did not set an operational code tier: %+v", profile)
 	}
 }
 
