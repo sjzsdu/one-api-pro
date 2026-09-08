@@ -86,7 +86,7 @@ func (r *ScoringModelRouter) SelectFallbackModel(ctx context.Context, group, fai
 	}
 	remaining := make([]string, 0, len(candidates.Models))
 	for _, candidate := range candidates.Models {
-		if !strings.EqualFold(candidate, failedModel) {
+		if !strings.EqualFold(candidate, failedModel) && supportsFallbackConstraints(candidates.Profiles[candidate], features, decision) {
 			remaining = append(remaining, candidate)
 		}
 	}
@@ -99,6 +99,21 @@ func (r *ScoringModelRouter) SelectFallbackModel(ctx context.Context, group, fai
 	}
 	result := ScoreRequestProfiles(features, remaining, candidates.Profiles, candidates.Availability, policy)
 	return result.Selected, decision, nil
+}
+
+func supportsFallbackConstraints(profile ModelProfile, features *RequestFeatures, decision FallbackDecision) bool {
+	if decision.RequireLargerContext && features != nil && profile.ContextWindow > 0 && profile.ContextWindow < features.EstimatedTokens {
+		return false
+	}
+	// After a capability failure, avoid retrying an unknown-capability model:
+	// only an explicitly compatible fallback can repair the request.
+	if decision.RequireVision && profile.Vision != CapabilitySupported {
+		return false
+	}
+	if decision.RequireTools && profile.Tools != CapabilitySupported {
+		return false
+	}
+	return true
 }
 
 type FallbackEvent struct {
