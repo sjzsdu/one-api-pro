@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelbus/one-api-pro/channelrouter"
+	"github.com/modelbus/one-api-pro/model"
 	schema "github.com/modelbus/one-api-pro/relay/schema"
 )
 
@@ -40,6 +42,14 @@ type ScoringResult struct {
 	Scores   map[string]CandidateScore
 }
 
+// ModelAvailability is the aggregate health of channels that can serve one
+// model. Model routing happens before a concrete channel is chosen, so the
+// best currently usable channel represents that model's availability.
+type ModelAvailability struct {
+	Score     float64
+	LatencyMS int
+}
+
 func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, userID int, req *ModelSelectRequest) (string, error) {
 	started := time.Now()
 	features := requestFeatures(req)
@@ -66,7 +76,8 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 			req.DisableSessionPin = true
 		}
 	}
-	result := ScoreModelProfiles(features.Prompt, candidates.Models, candidates.Profiles, policy)
+	availability := RuntimeAvailability(group, candidates.Models)
+	result := ScoreModelProfilesWithFeatures(features, candidates.Models, candidates.Profiles, availability, policy)
 	flatScores := make(map[string]float64, len(result.Scores))
 	var selectedComponents map[string]float64
 	for name, score := range result.Scores {
@@ -78,7 +89,7 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 	turnType := DetectTurnType(features)
 	RecordRoutingDecision(ctx, RoutingDecision{
 		Model: result.Selected, Score: result.Scores[result.Selected].Total, Scores: selectedComponents,
-		Strategy: r.Name(), Group: group, UserID: userID, TurnType: turnType, Features: features,
+		Strategy: r.Name(), Group: group, UserID: userID, TurnType: turnType, Difficulty: DetectTaskDifficulty(features), Features: features,
 		Candidates: candidates.Models, CandidateScores: flatScores, FilteredOut: candidates.FilteredOut,
 		FilterReasons: candidates.FilterReasons, Reason: "highest dynamic profile score (" + policy + ")",
 		LatencyMs: time.Since(started).Milliseconds(),
@@ -87,17 +98,30 @@ func (r *ScoringModelRouter) SelectModel(ctx context.Context, group string, user
 }
 
 func ScoreModelProfiles(prompt string, names []string, profiles map[string]ModelProfile, policy string) ScoringResult {
+	return ScoreModelProfilesWithFeatures(&RequestFeatures{Prompt: prompt}, names, profiles, nil, policy)
+}
+
+// ScoreModelProfilesWithFeatures scores profile data together with request
+// difficulty and live channel pressure. It is exported so dry-run/admin tools
+// can show the exact components used by production selection.
+func ScoreModelProfilesWithFeatures(features *RequestFeatures, names []string, profiles map[string]ModelProfile, availability map[string]ModelAvailability, policy string) ScoringResult {
 	weights, ok := scorePolicies[policy]
 	if !ok {
 		weights = scorePolicies["balanced"]
 	}
-	category := detectTaskCategory(prompt)
+	category := detectTaskCategory(features.Prompt)
+	difficulty := DetectTaskDifficulty(features)
+	weights = weightsForDifficulty(weights, difficulty)
 	costs := make(map[string]*float64, len(names))
 	latencies := make(map[string]*float64, len(names))
 	for _, name := range names {
 		profile := profiles[name]
 		costs[name] = averageCost(profile.InputCost, profile.OutputCost)
 		latencies[name] = profile.Latency
+		if live, ok := availability[name]; ok && live.LatencyMS > 0 {
+			value := float64(live.LatencyMS)
+			latencies[name] = &value
+		}
 	}
 	costScores := normalizeLowerIsBetter(names, costs)
 	latencyScores := normalizeLowerIsBetter(names, latencies)
@@ -120,16 +144,66 @@ func ScoreModelProfiles(prompt string, names []string, profiles map[string]Model
 		}
 		confidence := clamp01(profile.Confidence)
 		uncertainty := 1 - confidence
+		live := ModelAvailability{Score: .5}
+		if value, ok := availability[name]; ok {
+			live = value
+		}
+		availabilityScore := clamp01(live.Score)
 		components := map[string]float64{
 			"quality": quality, "reliability": reliability,
 			"cost": costScores[name], "latency": latencyScores[name],
 			"uncertainty_penalty": uncertainty,
+			"availability":        availabilityScore,
 		}
+		// Live availability is folded into reliability, preserving the policy's
+		// total weight while giving cooldown/rate/concurrency/error pressure a
+		// direct influence on the selected model.
+		reliability = .55*reliability + .45*availabilityScore
+		components["reliability"] = reliability
 		total := weights.Quality*quality + weights.Reliability*reliability + weights.Cost*costScores[name] + weights.Latency*latencyScores[name] - weights.Uncertainty*uncertainty
 		result.Scores[name] = CandidateScore{Total: total, Components: components, Confidence: confidence, ProfileData: append([]string(nil), profile.Sources...)}
 		if total > bestScore {
 			bestScore, result.Selected = total, name
 		}
+	}
+	return result
+}
+
+func weightsForDifficulty(base ScoreWeights, difficulty TaskDifficulty) ScoreWeights {
+	switch difficulty {
+	case TaskDifficultySimple:
+		return ScoreWeights{Quality: .20, Reliability: .20, Cost: .40, Latency: .20, Uncertainty: base.Uncertainty}
+	case TaskDifficultyComplex:
+		return ScoreWeights{Quality: .65, Reliability: .20, Cost: .05, Latency: .10, Uncertainty: base.Uncertainty}
+	default:
+		return base
+	}
+}
+
+// RuntimeAvailability reads the same cooldown, RPM and concurrency trackers
+// used by channel routing, plus persisted recent-error and response-time data.
+// It is deliberately best-effort: unavailable caches/routers retain the
+// neutral score instead of making auto routing fail.
+func RuntimeAvailability(group string, names []string) map[string]ModelAvailability {
+	result := make(map[string]ModelAvailability, len(names))
+	for _, name := range names {
+		channels := model.GetChannelCandidates(group, name)
+		if len(channels) == 0 {
+			result[name] = ModelAvailability{Score: 0}
+			continue
+		}
+		best := ModelAvailability{Score: 0}
+		for _, channel := range channels {
+			snapshot := channelrouter.AvailabilitySnapshot{Score: .5, LatencyMS: channel.ResponseTime}
+			if channelrouter.DefaultRouter != nil {
+				snapshot = channelrouter.DefaultRouter.Availability(channel)
+			}
+			candidate := ModelAvailability{Score: snapshot.Score, LatencyMS: snapshot.LatencyMS}
+			if candidate.Score > best.Score || candidate.Score == best.Score && candidate.LatencyMS > 0 && (best.LatencyMS == 0 || candidate.LatencyMS < best.LatencyMS) {
+				best = candidate
+			}
+		}
+		result[name] = best
 	}
 	return result
 }

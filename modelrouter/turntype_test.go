@@ -60,3 +60,24 @@ func TestSpecialModelSelectionPrefersLowCost(t *testing.T) {
 		t.Fatalf("economy scoring selected %q, want cheap", got)
 	}
 }
+
+func TestDetectTaskDifficulty(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *RequestFeatures
+		want TaskDifficulty
+	}{
+		{"simple title", &RequestFeatures{Prompt: "generate a title", EstimatedTokens: 20, MaxOutputTokens: 32}, TaskDifficultySimple},
+		{"normal chat", &RequestFeatures{Prompt: "explain this topic"}, TaskDifficultyNormal},
+		{"complex code", &RequestFeatures{Prompt: "debug and refactor this algorithm"}, TaskDifficultyComplex},
+		{"tools", &RequestFeatures{Prompt: "look this up", HasTools: true}, TaskDifficultyComplex},
+		{"long context", &RequestFeatures{EstimatedTokens: 16000}, TaskDifficultyComplex},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := DetectTaskDifficulty(test.in); got != test.want {
+				t.Fatalf("DetectTaskDifficulty() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}

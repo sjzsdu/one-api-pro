@@ -77,3 +77,26 @@ func TestCanonicalModelName(t *testing.T) {
 		}
 	}
 }
+
+func TestScoringAdjustsWeightsForDifficultyAndAvailability(t *testing.T) {
+	cheap, expensive := .1, 10.0
+	profiles := map[string]ModelProfile{
+		"cheap": {InputCost: &cheap, OutputCost: &cheap, Quality: map[string]float64{"code": .4}, Confidence: 1},
+		"best":  {InputCost: &expensive, OutputCost: &expensive, Quality: map[string]float64{"code": .6}, Confidence: 1},
+	}
+	simple := ScoreModelProfilesWithFeatures(&RequestFeatures{Prompt: "translate this", EstimatedTokens: 10, MaxOutputTokens: 32}, []string{"cheap", "best"}, profiles, nil, "balanced")
+	if simple.Selected != "cheap" {
+		t.Fatalf("simple request selected %q, want cheap", simple.Selected)
+	}
+	complex := ScoreModelProfilesWithFeatures(&RequestFeatures{Prompt: "debug this code", HasTools: true}, []string{"cheap", "best"}, profiles, nil, "balanced")
+	if complex.Selected != "best" {
+		t.Fatalf("complex request selected %q, want best", complex.Selected)
+	}
+	available := ScoreModelProfilesWithFeatures(&RequestFeatures{Prompt: "debug this code", HasTools: true}, []string{"cheap", "best"}, profiles, map[string]ModelAvailability{"cheap": {Score: 1}, "best": {Score: 0}}, "balanced")
+	if available.Selected != "cheap" {
+		t.Fatalf("unavailable best model selected %q, want cheap", available.Selected)
+	}
+	if available.Scores["best"].Components["availability"] != 0 {
+		t.Fatalf("availability component = %v, want 0", available.Scores["best"].Components["availability"])
+	}
+}

@@ -33,6 +33,17 @@ func (t TurnType) String() string {
 	}
 }
 
+// TaskDifficulty expresses how much reasoning and output fidelity a request
+// needs. It is intentionally separate from TurnType: a code request can be
+// simple, while a normal chat request can require complex analysis.
+type TaskDifficulty string
+
+const (
+	TaskDifficultySimple  TaskDifficulty = "simple"
+	TaskDifficultyNormal  TaskDifficulty = "normal"
+	TaskDifficultyComplex TaskDifficulty = "complex"
+)
+
 // RequestFeatures contains routing-relevant facts extracted from a request.
 // The explicit flags let callers avoid relying on prompt heuristics.
 type RequestFeatures struct {
@@ -135,6 +146,33 @@ func DetectTurnType(features *RequestFeatures) TurnType {
 		return TurnTypeTitleGen
 	}
 	return TurnTypeNormal
+}
+
+// DetectTaskDifficulty classifies the request before model scoring. Explicit
+// capabilities and token budget are more reliable than wording, then narrow
+// reasoning/code markers distinguish complex work from ordinary chat.
+func DetectTaskDifficulty(features *RequestFeatures) TaskDifficulty {
+	if features == nil {
+		return TaskDifficultyNormal
+	}
+	if DetectTurnType(features) != TurnTypeNormal {
+		return TaskDifficultySimple
+	}
+	if features.HasImages || features.HasTools || features.HasToolResult ||
+		features.EstimatedTokens >= 16000 || features.MaxOutputTokens >= 4000 {
+		return TaskDifficultyComplex
+	}
+	text := strings.ToLower(features.SystemPrompt + "\n" + features.Prompt)
+	if containsAny(text,
+		"prove", "proof", "derive", "step by step", "architecture", "design a", "debug", "refactor", "implement", "algorithm",
+		"证明", "推导", "逐步", "架构", "设计", "调试", "重构", "实现", "算法", "深度分析") {
+		return TaskDifficultyComplex
+	}
+	if features.EstimatedTokens <= 300 && features.MaxOutputTokens <= 256 &&
+		containsAny(text, "hello", "thanks", "translate", "summarize", "title", "你好", "谢谢", "翻译", "摘要", "标题") {
+		return TaskDifficultySimple
+	}
+	return TaskDifficultyNormal
 }
 
 func estimateTokens(text string) int {
