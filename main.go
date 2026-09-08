@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 
+	"github.com/modelbus/one-api-pro/channelrouter"
+	"github.com/modelbus/one-api-pro/cluster"
 	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/client"
 	"github.com/modelbus/one-api-pro/common/config"
@@ -19,8 +22,6 @@ import (
 	"github.com/modelbus/one-api-pro/middleware"
 	"github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/modelrouter"
-	"github.com/modelbus/one-api-pro/channelrouter"
-	"github.com/modelbus/one-api-pro/cluster"
 	"github.com/modelbus/one-api-pro/relay/adaptor/openai"
 	"github.com/modelbus/one-api-pro/router"
 )
@@ -100,6 +101,11 @@ func main() {
 	client.Init()
 	channelrouter.InitRouter()
 	modelrouter.InitRouter()
+	if prewarmed, err := modelrouter.PrewarmDefaultRouter(context.Background()); err != nil {
+		logger.FatalLog("failed to initialize ONNX embedding router: " + err.Error())
+	} else if prewarmed {
+		logger.SysLog("ONNX embedding router is ready")
+	}
 
 	// 初始化集群模块
 	cluster.Init(model.DB)

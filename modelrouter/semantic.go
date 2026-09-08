@@ -21,6 +21,24 @@ type EmbeddingModelRouter struct {
 
 func (r *EmbeddingModelRouter) Name() string { return "embedding" }
 
+// Prewarm eagerly creates the scorer. For ONNX this resolves/downloads the
+// model and tokenizer and opens the native runtime session, so the first auto
+// request does not pay startup latency or discover a broken model setup.
+func (r *EmbeddingModelRouter) Prewarm(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.once.Do(func() { r.scorer, r.err = newEmbeddingScorerFromEnv() })
+	return r.err
+}
+
+func (r *EmbeddingModelRouter) ScoreCandidates(ctx context.Context, prompt string, models []string) (map[string]float64, []ClusterMatch, error) {
+	if err := r.Prewarm(ctx); err != nil {
+		return nil, nil, err
+	}
+	return r.scorer.ScoreWithMatches(ctx, prompt, models)
+}
+
 func (r *EmbeddingModelRouter) SelectModel(ctx context.Context, group string, _ int, req *ModelSelectRequest) (string, error) {
 	features := requestFeatures(req)
 	candidates, err := ResolveCandidates(ctx, group, features)
@@ -38,11 +56,7 @@ func (r *EmbeddingModelRouter) SelectModel(ctx context.Context, group string, _ 
 	if prompt == "" {
 		return models[0], nil
 	}
-	r.once.Do(func() { r.scorer, r.err = newEmbeddingScorerFromEnv() })
-	if r.err != nil {
-		return "", r.err
-	}
-	scores, err := r.scorer.Score(ctx, prompt, models)
+	scores, matches, err := r.ScoreCandidates(ctx, prompt, models)
 	if err != nil {
 		return "", fmt.Errorf("semantic model scoring: %w", err)
 	}
@@ -53,6 +67,12 @@ func (r *EmbeddingModelRouter) SelectModel(ctx context.Context, group string, _ 
 			best, bestScore = candidate, scores[candidate]
 		}
 	}
+	RecordRoutingDecision(ctx, RoutingDecision{
+		Model: best, Score: bestScore, Strategy: r.Name(), Group: group,
+		Features: features, Candidates: models, CandidateScores: scores,
+		FilteredOut: candidates.FilteredOut, FilterReasons: candidates.FilterReasons,
+		ClusterMatches: matches, Reason: "highest embedding semantic score",
+	})
 	return best, nil
 }
 

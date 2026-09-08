@@ -44,18 +44,28 @@ type defaultProfileProvider struct {
 
 func (p defaultProfileProvider) Profiles(_ context.Context, names []string) (map[string]ModelProfile, error) {
 	result := make(map[string]ModelProfile, len(names))
-	stored := p.store.Snapshot(names)
+	canonicalNames := make([]string, 0, len(names))
+	for _, name := range names {
+		canonicalNames = append(canonicalNames, CanonicalModelName(name))
+	}
+	stored := p.store.Snapshot(canonicalNames)
 	for _, name := range names {
 		profile := genericProfile(name)
+		canonicalName := CanonicalModelName(name)
+		profile.CanonicalName = canonicalName
 		if price, ok := model.GetModelPrice(name); ok {
 			input, output := price.InputPrice, price.OutputPrice
 			profile.InputCost, profile.OutputCost = &input, &output
 			profile.Confidence = max(profile.Confidence, .65)
 			profile.Sources = append(profile.Sources, "model_price")
 		}
-		if override, ok := stored[name]; ok {
+		if override, ok := stored[canonicalName]; ok {
 			profile = mergeProfile(profile, override)
 		}
+		// The profile describes the canonical catalog model, while the map key
+		// and Model field must remain the channel-visible name.
+		profile.Model = name
+		profile.CanonicalName = canonicalName
 		result[name] = profile
 	}
 	return result, nil
