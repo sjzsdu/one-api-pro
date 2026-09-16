@@ -11,9 +11,8 @@ func (a *Adaptor) NeedsRequestBodyConversion() bool {
 }
 
 var ModelList = []string{
-	"Baichuan2-Turbo",
-	"Baichuan2-Turbo-192k",
-	"Baichuan-Text-Embedding",
+	"Baichuan4", "Baichuan4-Turbo", "Baichuan3-Turbo", "Baichuan3-Turbo-128k",
+	"Baichuan2-Turbo", "Baichuan2-Turbo-192k", "Baichuan-Text-Embedding",
 }
 
 func (a *Adaptor) GetModelList() []string  { return ModelList }

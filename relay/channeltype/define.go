@@ -55,5 +55,7 @@ const (
 	AliBailian
 	OpenAICompatible
 	GeminiOpenAICompatible
+	OpenAICodexOAuth
+	Kimi
 	Dummy
 )

@@ -256,15 +256,16 @@ func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 				logContent = fmt.Sprintf("订阅计费 | %s", logContent)
 			}
 			model.RecordConsumeLog(ctx, &model.Log{
-				UserId:           meta.UserId,
-				ChannelId:        meta.ChannelId,
-				PromptTokens:     0,
-				CompletionTokens: 0,
-				CachedTokens:     0,
-				ModelName:        meta.OriginModelName,
-				TokenName:        tokenName,
-				Quota:            int(quota),
-				Content:          logContent,
+				UserId:            meta.UserId,
+				ChannelId:         meta.ChannelId,
+				PromptTokens:      0,
+				CompletionTokens:  0,
+				CachedTokens:      0,
+				ModelName:         meta.OriginModelName,
+				ResponseModelName: meta.ActualModelName,
+				TokenName:         tokenName,
+				Quota:             int(quota),
+				Content:           logContent,
 				BillingSource: func() int {
 					if meta.PlanId > 0 {
 						return 1

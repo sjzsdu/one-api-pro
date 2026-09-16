@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/modelbus/one-api-pro/common"
+	"github.com/modelbus/one-api-pro/common/config"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"github.com/modelbus/one-api-pro/model"
 )
@@ -89,5 +90,33 @@ func TestTokenAuth_SuffixChannelPinning(t *testing.T) {
 	}
 	if got, _ := body["channel_id"].(string); got != "42" {
 		t.Fatalf("SpecificChannelId = %q, want %q (from suffix)", got, "42")
+	}
+}
+
+func TestTokenAuth_AutoBypassesTokenModelListWhenEnabled(t *testing.T) {
+	userID, tokenID := seedUser(t, "auto-user", model.RoleCommonUser, "autotokenkeydddd", true)
+	models := "deepseek-chat"
+	if err := model.DB.Model(&model.Token{}).Where("id = ?", tokenID).Update("models", models).Error; err != nil {
+		t.Fatalf("restrict token models: %v", err)
+	}
+
+	previous := config.ModelAutoEnabled
+	config.ModelAutoEnabled = true
+	t.Cleanup(func() { config.ModelAutoEnabled = previous })
+
+	r := gin.New()
+	r.POST("/v1/chat/completions", TokenAuth(), func(c *gin.Context) {
+		if got := c.GetInt(ctxkey.Id); got != userID {
+			t.Fatalf("user id = %d, want %d", got, userID)
+		}
+		c.Status(http.StatusNoContent)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"auto"}`))
+	req.Header.Set("Authorization", "Bearer sk-autotokenkeydddd")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("auto request status = %d, want %d; body=%s", w.Code, http.StatusNoContent, w.Body.String())
 	}
 }

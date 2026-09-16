@@ -14,63 +14,73 @@
         v-model:selected-keys="selectedKeys"
         @menu-item-click="handleMenuClick"
         class="sidebar-menu"
+        role="menu"
+        aria-label="主导航"
       >
-        <a-menu-item key="/dashboard">
+        <a-menu-item key="/dashboard" role="menuitem" tabindex="0" :aria-current="route.path === '/dashboard' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/dashboard')">
           <template #icon><icon-dashboard /></template>
           {{ $t('menu.dashboard') }}
         </a-menu-item>
-        <a-menu-item key="/chat" v-if="chatLink">
+        <a-menu-item key="/chat" v-if="chatLink" role="menuitem" tabindex="0" :aria-current="route.path === '/chat' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/chat')">
           <template #icon><icon-message /></template>
           {{ $t('menu.chat') }}
         </a-menu-item>
-        <a-menu-item key="/token">
+        <a-menu-item key="/model-quiz" role="menuitem" tabindex="0" :aria-current="route.path === '/model-quiz' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/model-quiz')">
+          <template #icon><icon-experiment /></template>
+          {{ $t('menu.modelQuiz') }}
+        </a-menu-item>
+        <a-menu-item key="/models" role="menuitem" tabindex="0" :aria-current="route.path === '/models' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/models')">
+          <template #icon><icon-apps /></template>
+          {{ $t('menu.models') }}
+        </a-menu-item>
+        <a-menu-item key="/token" role="menuitem" tabindex="0" :aria-current="route.path === '/token' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/token')">
           <template #icon><icon-code /></template>
           {{ $t('menu.token') }}
         </a-menu-item>
-        <a-menu-item key="/redeem">
+        <a-menu-item key="/redeem" role="menuitem" tabindex="0" :aria-current="route.path === '/redeem' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/redeem')">
           <template #icon><icon-gift /></template>
           {{ $t('menu.redeem') }}
         </a-menu-item>
-        <a-menu-item key="/plans">
+        <a-menu-item key="/plans" role="menuitem" tabindex="0" :aria-current="route.path === '/plans' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/plans')">
           <template #icon><icon-gift /></template>
           {{ $t('menu.plans') }}
         </a-menu-item>
-        <a-menu-item key="/orders">
+        <a-menu-item key="/orders" role="menuitem" tabindex="0" :aria-current="route.path === '/orders' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/orders')">
           <template #icon><icon-storage /></template>
           {{ $t('menu.orders') }}
         </a-menu-item>
-        <a-menu-item key="/log">
+        <a-menu-item key="/log" role="menuitem" tabindex="0" :aria-current="route.path === '/log' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/log')">
           <template #icon><icon-file /></template>
           {{ $t('menu.log') }}
         </a-menu-item>
 
         <template v-if="authStore.isAdmin">
           <div class="menu-divider" />
-          <a-menu-item key="/admin/dashboard">
+          <a-menu-item key="/admin/dashboard" role="menuitem" tabindex="0" :aria-current="route.path === '/admin/dashboard' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/admin/dashboard')">
             <template #icon><icon-bar-chart /></template>
             {{ $t('menu.adminDashboard') }}
           </a-menu-item>
-          <a-menu-item key="/channel">
+          <a-menu-item key="/channel" role="menuitem" tabindex="0" :aria-current="route.path === '/channel' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/channel')">
             <template #icon><icon-apps /></template>
             {{ $t('menu.channel') }}
           </a-menu-item>
-          <a-menu-item key="/admin/orders">
+          <a-menu-item key="/admin/orders" role="menuitem" tabindex="0" :aria-current="route.path === '/admin/orders' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/admin/orders')">
             <template #icon><icon-storage /></template>
             {{ $t('menu.orders') }}
           </a-menu-item>
-          <a-menu-item key="/redemption">
+          <a-menu-item key="/redemption" role="menuitem" tabindex="0" :aria-current="route.path === '/redemption' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/redemption')">
             <template #icon><icon-gift /></template>
             {{ $t('menu.redemption') }}
           </a-menu-item>
-          <a-menu-item key="/user">
+          <a-menu-item key="/user" role="menuitem" tabindex="0" :aria-current="route.path === '/user' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/user')">
             <template #icon><icon-user-group /></template>
             {{ $t('menu.user') }}
           </a-menu-item>
-          <a-menu-item key="/subscription">
+          <a-menu-item key="/subscription" role="menuitem" tabindex="0" :aria-current="route.path === '/subscription' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/subscription')">
             <template #icon><icon-calendar /></template>
             {{ $t('menu.subscription') }}
           </a-menu-item>
-          <a-menu-item key="/setting">
+          <a-menu-item key="/setting" role="menuitem" tabindex="0" :aria-current="route.path.startsWith('/setting') ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/setting')">
             <template #icon><icon-settings /></template>
             {{ $t('menu.setting') }}
           </a-menu-item>
@@ -166,7 +176,7 @@ import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useStatusStore } from '@/stores/status'
-import { IconDashboard, IconMessage, IconApps, IconCode, IconGift, IconArchive, IconUserGroup, IconCalendar, IconFile, IconSettings, IconExport, IconUser, IconDown, IconStorage, IconBarChart, IconCopy } from '@arco-design/web-vue/es/icon'
+import { IconDashboard, IconMessage, IconApps, IconCode, IconGift, IconArchive, IconUserGroup, IconCalendar, IconFile, IconSettings, IconExport, IconUser, IconDown, IconStorage, IconBarChart, IconCopy, IconExperiment } from '@arco-design/web-vue/es/icon'
 import LangSwitcher from '@/components/LangSwitcher.vue'
 import api from '@/api'
 import logoPng from '@/assets/logo.png'
@@ -200,6 +210,23 @@ const roleText = computed(() => {
 const roleColor = computed(() => authStore.isRoot ? 'orangered' : authStore.isAdmin ? 'arcoblue' : 'gray')
 
 const handleMenuClick = (key) => { router.push(key) }
+const handleMenuKeydown = (event, key) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    router.push(key)
+    return
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const items = [...event.currentTarget.closest('[role="menu"]').querySelectorAll('[role="menuitem"]')]
+  const currentIndex = items.indexOf(event.currentTarget)
+  const nextIndex = event.key === 'Home'
+    ? 0
+    : event.key === 'End'
+      ? items.length - 1
+      : (currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+  items[nextIndex]?.focus()
+}
 const handleLogout = async () => { await authStore.logout(); router.push('/login') }
 
 // Profile Modal
@@ -321,8 +348,9 @@ watch(() => route.path, (path) => { selectedKeys.value = [path] })
 .navbar-left { display: flex; align-items: center; }
 .navbar-right { display: flex; align-items: center; gap: 12px; }
 .username { color: var(--color-text-2); font-size: 14px; }
-.user-trigger { cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+.user-trigger { cursor: pointer; padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; font: inherit; }
 .user-trigger:hover { background: var(--color-fill-2); }
+.user-trigger:focus-visible { outline: 2px solid rgb(var(--primary-6)); outline-offset: 2px; }
 
 .content-area { padding: 20px; overflow-y: auto; min-width: 0; overflow-x: hidden; }
 

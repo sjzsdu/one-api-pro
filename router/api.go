@@ -27,6 +27,10 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/oidc", middleware.CriticalRateLimit(), auth.OidcAuth)
 		apiRouter.GET("/oauth/lark", middleware.CriticalRateLimit(), auth.LarkOAuth)
 		apiRouter.GET("/oauth/state", middleware.CriticalRateLimit(), auth.GenerateOAuthCode)
+		apiRouter.POST("/oauth/openai/login", middleware.AdminAuth(), controller.StartOpenAIOAuth)
+		apiRouter.GET("/oauth/openai/flows/:id", middleware.AdminAuth(), controller.GetOpenAIOAuthFlow)
+		apiRouter.POST("/oauth/openai/flows/:id/poll", middleware.AdminAuth(), controller.PollOpenAIOAuthFlow)
+		apiRouter.GET("/oauth/openai/callback", controller.OpenAIOAuthCallback)
 		apiRouter.GET("/oauth/wechat", middleware.CriticalRateLimit(), auth.WeChatAuth)
 		apiRouter.GET("/oauth/wechat/bind", middleware.CriticalRateLimit(), middleware.UserAuth(), auth.WeChatBind)
 		apiRouter.GET("/oauth/email/bind", middleware.CriticalRateLimit(), middleware.UserAuth(), controller.EmailBind)
@@ -76,6 +80,9 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/", controller.GetAllChannels)
 			channelRoute.GET("/search", controller.SearchChannels)
 			channelRoute.GET("/models", controller.ListAllModels)
+			channelRoute.GET("/model_catalog", controller.ListConfiguredModels)
+			channelRoute.POST("/models/refresh", controller.RefreshChannelModels)
+			channelRoute.POST("/models/validate", controller.ValidateChannelModels)
 			channelRoute.GET("/:id", controller.GetChannel)
 			channelRoute.GET("/test", controller.TestChannels)
 			channelRoute.GET("/test/:id", controller.TestChannel)
@@ -119,6 +126,14 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			groupRoute.GET("/", controller.GetGroups)
 		}
+		modelRouterRoute := apiRouter.Group("/model_router")
+		modelRouterRoute.Use(middleware.AdminAuth())
+		{
+			modelRouterRoute.GET("/decisions", controller.GetRoutingDecisions)
+			modelRouterRoute.GET("/manifest", controller.GetEmbeddingManifest)
+			modelRouterRoute.POST("/manifest/reload", controller.ReloadEmbeddingManifest)
+		}
+		apiRouter.POST("/model_router/quiz", middleware.UserAuth(), controller.ModelRouterQuiz)
 		modelPriceRoute := apiRouter.Group("/model_price")
 		modelPriceRoute.Use(middleware.RootAuth())
 		{

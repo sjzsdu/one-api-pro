@@ -1,0 +1,182 @@
+[
+  {
+    "model": "gpt-4",
+    "canonical_name": "gpt-4",
+    "context_window": 8192,
+    "vision": "supported",
+    "tools": "supported",
+    "quality": {
+      "code": 0.85,
+      "translate": 0.90,
+      "math": 0.85,
+      "reason": 0.90,
+      "creative": 0.85,
+      "chat": 0.80,
+      "default": 0.85
+    },
+    "confidence": 0.90,
+    "sources": ["openai_docs", "community_benchmark"]
+  },
+  {
+    "model": "gpt-4o",
+    "canonical_name": "gpt-4o",
+    "context_window": 128000,
+    "vision": "supported",
+    "tools": "supported",
+    "quality": {
+      "code": 0.88,
+      "translate": 0.92,
+      "math": 0.88,
+      "reason": 0.91,
+      "creative": 0.90,
+      "chat": 0.93,
+      "default": 0.90
+    },
+    "confidence": 0.92,
+    "sources": ["openai_docs", "quality_means"]
+  },
+  {
+    "model": "gpt-4o-mini",
+    "canonical_name": "gpt-4o-mini",
+    "context_window": 128000,
+    "vision": "supported",
+    "tools": "supported",
+    "quality": {
+      "code": 0.72,
+      "translate": 0.75,
+      "math": 0.70,
+      "reason": 0.70,
+      "creative": 0.75,
+      "chat": 0.85,
+      "default": 0.75
+    },
+    "confidence": 0.85,
+    "sources": ["openai_docs", "quality_means"]
+  },
+  {
+    "model": "gpt-3.5-turbo",
+    "canonical_name": "gpt-3.5-turbo",
+    "context_window": 16385,
+    "vision": "unsupported",
+    "tools": "supported",
+    "quality": {
+      "code": 0.65,
+      "translate": 0.70,
+      "math": 0.60,
+      "reason": 0.65,
+      "creative": 0.70,
+      "chat": 0.80,
+      "default": 0.70
+    },
+    "confidence": 0.80,
+    "sources": ["openai_docs"]
+  },
+  {
+    "model": "claude-3.5-sonnet",
+    "canonical_name": "claude-3.5-sonnet",
+    "context_window": 200000,
+    "vision": "supported",
+    "tools": "supported",
+    "quality": {
+      "code": 0.92,
+      "translate": 0.90,
+      "math": 0.85,
+      "reason": 0.92,
+      "creative": 0.88,
+      "chat": 0.85,
+      "default": 0.88
+    },
+    "confidence": 0.90,
+    "sources": ["anthropic_docs", "community_benchmark"]
+  },
+  {
+    "model": "deepseek-chat",
+    "canonical_name": "deepseek-chat",
+    "context_window": 64000,
+    "vision": "unsupported",
+    "tools": "supported",
+    "quality": {
+      "code": 0.92,
+      "translate": 0.83,
+      "math": 0.88,
+      "reason": 0.83,
+      "creative": 0.80,
+      "chat": 0.85,
+      "default": 0.85
+    },
+    "confidence": 0.88,
+    "sources": ["deepseek_docs", "quality_means"]
+  },
+  {
+    "model": "deepseek-coder",
+    "canonical_name": "deepseek-coder",
+    "context_window": 64000,
+    "vision": "unsupported",
+    "tools": "supported",
+    "quality": {
+      "code": 0.95,
+      "translate": 0.75,
+      "math": 0.85,
+      "reason": 0.80,
+      "creative": 0.65,
+      "chat": 0.70,
+      "default": 0.80
+    },
+    "confidence": 0.85,
+    "sources": ["deepseek_docs"]
+  },
+  {
+    "model": "deepseek-reasoner",
+    "canonical_name": "deepseek-reasoner",
+    "context_window": 64000,
+    "vision": "unsupported",
+    "tools": "unsupported",
+    "quality": {
+      "code": 0.86,
+      "translate": 0.75,
+      "math": 0.96,
+      "reason": 0.94,
+      "creative": 0.70,
+      "chat": 0.75,
+      "default": 0.82
+    },
+    "confidence": 0.90,
+    "sources": ["deepseek_docs", "quality_means"]
+  },
+  {
+    "model": "o1",
+    "canonical_name": "o1",
+    "context_window": 200000,
+    "vision": "supported",
+    "tools": "unsupported",
+    "quality": {
+      "code": 0.95,
+      "translate": 0.88,
+      "math": 0.98,
+      "reason": 0.96,
+      "creative": 0.82,
+      "chat": 0.80,
+      "default": 0.90
+    },
+    "confidence": 0.92,
+    "sources": ["openai_docs"]
+  },
+  {
+    "model": "o1-mini",
+    "canonical_name": "o1-mini",
+    "context_window": 128000,
+    "vision": "unsupported",
+    "tools": "unsupported",
+    "quality": {
+      "code": 0.88,
+      "translate": 0.80,
+      "math": 0.92,
+      "reason": 0.90,
+      "creative": 0.75,
+      "chat": 0.75,
+      "default": 0.82
+    },
+    "confidence": 0.88,
+    "sources": ["openai_docs"]
+  }
+]

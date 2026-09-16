@@ -13,13 +13,7 @@ type Adaptor struct {
 }
 
 var ModelList = []string{
-	"abab6.5-chat",
-	"abab6.5s-chat",
-	"abab6-chat",
-	"abab5.5-chat",
-	"abab5.5s-chat",
-	"MiniMax-VL-01",
-	"MiniMax-Text-01",
+	"MiniMax-M1", "MiniMax-Text-01", "MiniMax-VL-01", "abab6.5-chat", "abab6.5s-chat", "abab6-chat", "abab5.5-chat", "abab5.5s-chat",
 }
 
 func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {

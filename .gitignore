@@ -32,3 +32,5 @@ docs/doc-site/.vitepress/cache/
 docs/doc-site/.vitepress/.temp/
 # Synced markdown (generated from docs/**/*-{zh,en}.md by docs/scripts/sync-docs.mjs)
 docs/doc-site/docs/
+.freebuff
+

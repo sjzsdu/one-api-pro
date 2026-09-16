@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -8,11 +9,14 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/modelbus/one-api-pro/channelrouter"
+	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/config"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/model"
+	"github.com/modelbus/one-api-pro/modelrouter"
 	"github.com/modelbus/one-api-pro/relay/registry"
+	schema "github.com/modelbus/one-api-pro/relay/schema"
 )
 
 type ModelRequest struct {
@@ -54,6 +58,39 @@ func Distribute() func(c *gin.Context) {
 			}
 		} else {
 			requestModel = c.GetString(ctxkey.RequestModel)
+			if requestModel == "auto" && config.ModelAutoEnabled && modelrouter.DefaultRouter != nil {
+				c.Set(ctxkey.OriginalRequestModel, requestModel)
+				var parsed schema.GeneralOpenAIRequest
+				var body []byte
+				body, _ = common.GetRequestBody(c)
+				_ = json.Unmarshal(body, &parsed)
+				// For /v1/responses endpoint, parse input field as messages and tools
+				if c.Request.URL.Path == "/v1/responses" {
+					if len(parsed.Messages) == 0 {
+						parsed.Messages = parseResponsesInputAsMessages(body)
+					}
+					if len(parsed.Tools) == 0 {
+						parsed.Tools = parseResponsesTools(body)
+					}
+				}
+				routerRequest := &modelrouter.ModelSelectRequest{
+					Model:     requestModel,
+					Messages:  parsed.Messages,
+					Tools:     parsed.Tools,
+					MaxTokens: parsed.MaxTokens,
+				}
+				selected, err := modelrouter.DefaultRouter.SelectModel(ctx, userGroup, userId, routerRequest)
+				if err != nil {
+					abortWithMessage(c, http.StatusServiceUnavailable, fmt.Sprintf("model auto 路由失败: %s", err.Error()))
+					return
+				}
+				requestModel = selected
+				c.Set(ctxkey.RequestModel, requestModel)
+				c.Set(ctxkey.ModelRouterRequest, routerRequest)
+				if routerRequest.DisableSessionPin {
+					c.Set(ctxkey.DisableSessionPin, true)
+				}
+			}
 			var err error
 			channel, err = selectChannelViaRouter(c, userGroup, requestModel, userId, false)
 			if err != nil {
@@ -69,7 +106,7 @@ func Distribute() func(c *gin.Context) {
 		logger.Debugf(ctx, "user id %d, user group: %s, request model: %s, using channel #%d", userId, userGroup, requestModel, channel.Id)
 
 		sessionKey := ""
-		if config.ChannelStickySessionEnabled && userId > 0 && requestModel != "" {
+		if config.ChannelStickySessionEnabled && !c.GetBool(ctxkey.DisableSessionPin) && userId > 0 && requestModel != "" {
 			sessionKey = channelrouter.MakeSessionKey(userId, requestModel)
 			c.Set(ctxkey.SessionKey, sessionKey)
 		}
@@ -109,7 +146,7 @@ func selectChannelViaRouter(c *gin.Context, group, modelName string, userId int,
 	}
 
 	sessionKey := ""
-	if config.ChannelStickySessionEnabled && userId > 0 && modelName != "" {
+	if config.ChannelStickySessionEnabled && !c.GetBool(ctxkey.DisableSessionPin) && userId > 0 && modelName != "" {
 		sessionKey = channelrouter.MakeSessionKey(userId, modelName)
 	}
 
@@ -177,4 +214,183 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 		}
 	}
 	c.Set(ctxkey.Config, cfg)
+}
+
+// parseResponsesInputAsMessages extracts messages from Responses API input format
+func parseResponsesInputAsMessages(body []byte) []schema.Message {
+	var req struct {
+		Input        json.RawMessage `json:"input"`
+		Instructions string          `json:"instructions,omitempty"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil
+	}
+
+	var messages []schema.Message
+
+	// Add instructions as system message
+	if req.Instructions != "" {
+		messages = append(messages, schema.Message{
+			Role:    "system",
+			Content: req.Instructions,
+		})
+	}
+
+	// Try to parse input as string
+	var inputStr string
+	if err := json.Unmarshal(req.Input, &inputStr); err == nil && inputStr != "" {
+		messages = append(messages, schema.Message{
+			Role:    "user",
+			Content: inputStr,
+		})
+		return messages
+	}
+
+	// Try to parse input as array
+	var inputItems []struct {
+		Type    string          `json:"type,omitempty"`
+		Role    string          `json:"role,omitempty"`
+		Content json.RawMessage `json:"content,omitempty"`
+		ID      string          `json:"id,omitempty"`
+		Name    string          `json:"name,omitempty"`
+		Args    string          `json:"arguments,omitempty"`
+		Output  string          `json:"output,omitempty"`
+		CallID  string          `json:"call_id,omitempty"`
+	}
+	if err := json.Unmarshal(req.Input, &inputItems); err != nil {
+		return messages
+	}
+
+	var toolCalls []schema.Tool
+	flushToolCalls := func() {
+		if len(toolCalls) == 0 {
+			return
+		}
+		messages = append(messages, schema.Message{Role: "assistant", ToolCalls: toolCalls})
+		toolCalls = nil
+	}
+	for _, item := range inputItems {
+		switch item.Type {
+		case "function_call":
+			callID := item.CallID
+			if callID == "" {
+				callID = item.ID
+			}
+			toolCalls = append(toolCalls, schema.Tool{Id: callID, Type: "function", Function: schema.Function{Name: item.Name, Arguments: item.Args}})
+		case "function_call_output":
+			flushToolCalls()
+			messages = append(messages, schema.Message{
+				Role:       "tool",
+				Content:    item.Output,
+				ToolCallId: item.CallID,
+			})
+		default:
+			flushToolCalls()
+			role := item.Role
+			if role == "" {
+				role = "user"
+			}
+			if role == "system" || role == "developer" {
+				role = "system"
+			}
+			// Extract text from content
+			text := extractContentText(item.Content)
+			if text == "" {
+				continue
+			}
+			messages = append(messages, schema.Message{Role: role, Content: text})
+		}
+	}
+	flushToolCalls()
+
+	return messages
+}
+
+func extractContentText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return ""
+	}
+
+	var result string
+	for _, b := range blocks {
+		switch b.Type {
+		case "input_text", "text", "output_text":
+			if b.Text != "" {
+				if result != "" {
+					result += "\n"
+				}
+				result += b.Text
+			}
+		}
+	}
+	return result
+}
+
+// parseResponsesTools extracts tools from a Responses API request body and
+// converts them to Chat Completions format for feature detection by the router.
+func parseResponsesTools(body []byte) []schema.Tool {
+	var req struct {
+		Tools json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil || len(req.Tools) == 0 {
+		return nil
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(req.Tools, &items); err != nil {
+		return nil
+	}
+	return flattenResponsesToolsForRouter(items, "")
+}
+
+func flattenResponsesToolsForRouter(items []json.RawMessage, namespace string) []schema.Tool {
+	var result []schema.Tool
+	for _, rawItem := range items {
+		var item struct {
+			Type        string            `json:"type"`
+			Name        string            `json:"name"`
+			Description string            `json:"description"`
+			Parameters  any               `json:"parameters"`
+			Tools       []json.RawMessage `json:"tools"`
+		}
+		if json.Unmarshal(rawItem, &item) != nil {
+			continue
+		}
+		if item.Type == "namespace" {
+			childNS := item.Name
+			if childNS == "functions" {
+				childNS = ""
+			}
+			result = append(result, flattenResponsesToolsForRouter(item.Tools, childNS)...)
+			continue
+		}
+		if (item.Type != "function" && item.Type != "custom") || item.Name == "" {
+			continue
+		}
+		alias := item.Name
+		if namespace != "" {
+			alias = namespace + "__" + item.Name
+		}
+		result = append(result, schema.Tool{
+			Type: "function",
+			Function: schema.Function{
+				Name:        alias,
+				Description: item.Description,
+				Parameters:  item.Parameters,
+			},
+		})
+	}
+	return result
 }

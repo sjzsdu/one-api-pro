@@ -11,12 +11,12 @@ import (
 )
 
 type ChannelRouter struct {
-	filters      []ChannelFilter
-	selector     ChannelSelector
-	Cooldown     *CooldownManager
-	Concurrency  *ConcurrencyTracker
-	Sticky       *StickySessionStore
-	RPM          *RPMTracker
+	filters     []ChannelFilter
+	selector    ChannelSelector
+	Cooldown    *CooldownManager
+	Concurrency *ConcurrencyTracker
+	Sticky      *StickySessionStore
+	RPM         *RPMTracker
 }
 
 var DefaultRouter *ChannelRouter
@@ -32,6 +32,7 @@ func NewChannelRouter() *ChannelRouter {
 	r.filters = []ChannelFilter{
 		&StatusFilter{},
 		&FallbackFilter{},
+		&ExcludedChannelFilter{},
 		&CooldownFilter{cooldown: r.Cooldown},
 		&ConcurrencyFilter{concurrency: r.Concurrency},
 		&RPMFilter{rpmTracker: r.RPM},

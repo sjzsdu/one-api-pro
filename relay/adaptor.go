@@ -5,11 +5,13 @@ import (
 	"github.com/modelbus/one-api-pro/relay/registry"
 
 	// Register all adaptors via init()
+	_ "github.com/modelbus/one-api-pro/relay/adaptor/anthropic"
+	_ "github.com/modelbus/one-api-pro/relay/adaptor/openai"
+	_ "github.com/modelbus/one-api-pro/relay/adaptor/openaicodex"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/ai360"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/aiproxy"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/ali"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/alibailian"
-	_ "github.com/modelbus/one-api-pro/relay/adaptor/anthropic"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/aws"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/azure"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/baichuan"
@@ -24,13 +26,13 @@ import (
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/gemini"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/geminiv2"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/groq"
+	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/kimi"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/lingyiwanwu"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/minimax"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/mistral"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/moonshot"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/novita"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/ollama"
-	_ "github.com/modelbus/one-api-pro/relay/adaptor/openai"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/openrouter"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/palm"
 	_ "github.com/modelbus/one-api-pro/relay/adaptor/provider/replicate"
@@ -54,5 +56,11 @@ func GetAdaptorByChannelID(channelID string) adaptor.Adaptor {
 }
 
 func GetAdaptor(apiType int) adaptor.Adaptor {
+	// API type 0 is the canonical OpenAI adaptor. Legacy channel types use
+	// GetAdaptorByChannel instead; keeping this mapping preserves the historic
+	// GetAdaptor(0) contract used by startup checks.
+	if apiType == 0 {
+		return registry.GetAdaptor("openai")
+	}
 	return registry.GetAdaptorByLegacyType(apiType)
 }

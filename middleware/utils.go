@@ -52,7 +52,7 @@ func getRequestModel(c *gin.Context) (string, error) {
 func isModelInList(modelName string, models string) bool {
 	modelList := strings.Split(models, ",")
 	for _, model := range modelList {
-		if modelName == model {
+		if model == "*" || modelName == model {
 			return true
 		}
 	}

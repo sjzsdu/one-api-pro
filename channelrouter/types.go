@@ -12,6 +12,7 @@ type RouteRequest struct {
 	UserId              int
 	IgnoreFirstPriority bool
 	SessionKey          string
+	ExcludedChannelId   int
 }
 
 type ChannelFilter interface {

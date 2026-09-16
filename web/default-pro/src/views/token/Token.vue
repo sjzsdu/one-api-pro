@@ -202,14 +202,15 @@
           <a-input v-model="form.name" :placeholder="$t('token.namePlaceholder')" :max-length="50" allow-clear />
         </a-form-item>
 
-        <a-form-item field="models" :label="$t('token.modelsLabel')" :extra="$t('token.modelsExtra')">
+        <a-form-item field="models" :label="$t('token.modelsLabel')" :extra="availableModels.length ? $t('token.modelsExtra') : $t('token.modelsExtraEmpty')">
           <a-select
             v-model="form.models"
-            :placeholder="$t('token.modelsPlaceholder')"
+            :placeholder="availableModels.length ? $t('token.modelsPlaceholder') : $t('token.modelsPlaceholderEmpty')"
             multiple
             allow-clear
             allow-search
           >
+            <a-option key="*" value="*" :label="$t('token.allModels')" />
             <a-option v-for="m in availableModels" :key="m" :value="m" :label="m" />
           </a-select>
         </a-form-item>
@@ -386,11 +387,21 @@ import { formatQuota as formatQuotaYuan, yuanInputPrecision, DEFAULT_TOKEN_QUOTA
 const statusStore = useStatusStore()
 const { t } = useI18n()
 
+const vAccessibleInput = {
+  mounted(el, { value }) {
+    const input = el.matches('input') ? el : el.querySelector('input')
+    if (!input) return
+    input.setAttribute('aria-label', value.label)
+    if (value.required) input.setAttribute('aria-required', 'true')
+  },
+}
+
 const loading = ref(false)
 const loadingMore = ref(false)
 const isReachedEnd = ref(false)
 const submitting = ref(false)
 const tokens = ref([])
+const total = computed(() => tokens.value.length)
 const keyword = ref('')
 const activePage = ref(1)
 const pageSize = ref(10)
@@ -684,7 +695,7 @@ async function handleSubmit() {
   try {
     const payload = {
       name: form.name,
-      models: form.models.length ? form.models.join(',') : '',
+      models: form.models.includes('*') ? '*' : (form.models.length ? form.models.join(',') : ''),
       subnet: form.subnet,
       expired_time: buildTokenExpiredTime(form),
       remain_quota: form.unlimited_quota ? -1 : form.remain_quota,
@@ -1153,6 +1164,7 @@ onMounted(async () => {
   font-size: 13px;
   color: var(--color-text-2);
 }
+.accessible-field { width: 100%; }
 
 .input-with-checkbox {
   display: flex;

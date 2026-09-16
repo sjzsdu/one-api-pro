@@ -41,11 +41,15 @@ func ConvertRequest(textRequest model.GeneralOpenAIRequest) *Request {
 
 	for _, tool := range textRequest.Tools {
 		if params, ok := tool.Function.Parameters.(map[string]any); ok {
+			toolType, _ := params["type"].(string)
+			if toolType == "" {
+				toolType = "object"
+			}
 			claudeTools = append(claudeTools, Tool{
 				Name:        tool.Function.Name,
 				Description: tool.Function.Description,
 				InputSchema: InputSchema{
-					Type:       params["type"].(string),
+					Type:       toolType,
 					Properties: params["properties"],
 					Required:   params["required"],
 				},
@@ -54,13 +58,14 @@ func ConvertRequest(textRequest model.GeneralOpenAIRequest) *Request {
 	}
 
 	claudeRequest := Request{
-		Model:       textRequest.Model,
-		MaxTokens:   textRequest.MaxTokens,
-		Temperature: textRequest.Temperature,
-		TopP:        textRequest.TopP,
-		TopK:        textRequest.TopK,
-		Stream:      textRequest.Stream,
-		Tools:       claudeTools,
+		Model:         textRequest.Model,
+		MaxTokens:     textRequest.MaxTokens,
+		StopSequences: stringSlice(textRequest.Stop),
+		Temperature:   textRequest.Temperature,
+		TopP:          textRequest.TopP,
+		TopK:          textRequest.TopK,
+		Stream:        textRequest.Stream,
+		Tools:         claudeTools,
 	}
 	if len(claudeTools) > 0 {
 		claudeToolChoice := struct {
@@ -70,14 +75,21 @@ func ConvertRequest(textRequest model.GeneralOpenAIRequest) *Request {
 		if choice, ok := textRequest.ToolChoice.(map[string]any); ok {
 			if function, ok := choice["function"].(map[string]any); ok {
 				claudeToolChoice.Type = "tool"
-				claudeToolChoice.Name = function["name"].(string)
+				claudeToolChoice.Name, _ = function["name"].(string)
 			}
 		} else if toolChoiceType, ok := textRequest.ToolChoice.(string); ok {
-			if toolChoiceType == "any" {
-				claudeToolChoice.Type = toolChoiceType
+			switch toolChoiceType {
+			case "any", "required":
+				claudeToolChoice.Type = "any"
+			case "none":
+				claudeRequest.ToolChoice = nil
 			}
 		}
-		claudeRequest.ToolChoice = claudeToolChoice
+		if claudeRequest.ToolChoice == nil {
+			if toolChoiceType, ok := textRequest.ToolChoice.(string); !ok || toolChoiceType != "none" {
+				claudeRequest.ToolChoice = claudeToolChoice
+			}
+		}
 	}
 	if claudeRequest.MaxTokens == 0 {
 		claudeRequest.MaxTokens = 4096
@@ -96,6 +108,9 @@ func ConvertRequest(textRequest model.GeneralOpenAIRequest) *Request {
 		claudeMessage := Message{
 			Role: message.Role,
 		}
+		if claudeMessage.Role == "developer" {
+			claudeMessage.Role = "user"
+		}
 		var content Content
 		if message.IsStringContent() {
 			content.Type = "text"
@@ -110,7 +125,7 @@ func ConvertRequest(textRequest model.GeneralOpenAIRequest) *Request {
 			claudeMessage.Content = append(claudeMessage.Content, content)
 			for i := range message.ToolCalls {
 				inputParam := make(map[string]any)
-				_ = json.Unmarshal([]byte(message.ToolCalls[i].Function.Arguments.(string)), &inputParam)
+				_ = json.Unmarshal([]byte(toolArguments(message.ToolCalls[i].Function.Arguments)), &inputParam)
 				claudeMessage.Content = append(claudeMessage.Content, Content{
 					Type:  "tool_use",
 					Id:    message.ToolCalls[i].Id,
@@ -140,9 +155,53 @@ func ConvertRequest(textRequest model.GeneralOpenAIRequest) *Request {
 			contents = append(contents, content)
 		}
 		claudeMessage.Content = contents
+		for i := range message.ToolCalls {
+			inputParam := make(map[string]any)
+			arguments := toolArguments(message.ToolCalls[i].Function.Arguments)
+			if arguments != "" {
+				_ = json.Unmarshal([]byte(arguments), &inputParam)
+			}
+			claudeMessage.Content = append(claudeMessage.Content, Content{
+				Type:  "tool_use",
+				Id:    message.ToolCalls[i].Id,
+				Name:  message.ToolCalls[i].Function.Name,
+				Input: inputParam,
+			})
+		}
 		claudeRequest.Messages = append(claudeRequest.Messages, claudeMessage)
 	}
 	return &claudeRequest
+}
+
+func toolArguments(arguments any) string {
+	if arguments == nil {
+		return ""
+	}
+	if text, ok := arguments.(string); ok {
+		return text
+	}
+	data, err := json.Marshal(arguments)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func stringSlice(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		return values
+	case []any:
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			if text, ok := value.(string); ok {
+				result = append(result, text)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 // https://docs.anthropic.com/claude/reference/messages-streaming
@@ -160,8 +219,9 @@ func StreamResponseClaude2OpenAI(claudeResponse *StreamResponse) (*openai.ChatCo
 			responseText = claudeResponse.ContentBlock.Text
 			if claudeResponse.ContentBlock.Type == "tool_use" {
 				tools = append(tools, model.Tool{
-					Id:   claudeResponse.ContentBlock.Id,
-					Type: "function",
+					Id:    claudeResponse.ContentBlock.Id,
+					Index: claudeResponse.Index,
+					Type:  "function",
 					Function: model.Function{
 						Name:      claudeResponse.ContentBlock.Name,
 						Arguments: "",
@@ -174,6 +234,7 @@ func StreamResponseClaude2OpenAI(claudeResponse *StreamResponse) (*openai.ChatCo
 			responseText = claudeResponse.Delta.Text
 			if claudeResponse.Delta.Type == "input_json_delta" {
 				tools = append(tools, model.Tool{
+					Index: claudeResponse.Index,
 					Function: model.Function{
 						Arguments: claudeResponse.Delta.PartialJson,
 					},
@@ -208,17 +269,18 @@ func StreamResponseClaude2OpenAI(claudeResponse *StreamResponse) (*openai.ChatCo
 }
 
 func ResponseClaude2OpenAI(claudeResponse *Response) *openai.TextResponse {
-	var responseText string
-	if len(claudeResponse.Content) > 0 {
-		responseText = claudeResponse.Content[0].Text
-	}
+	var responseTextParts []string
 	tools := make([]model.Tool, 0)
-	for _, v := range claudeResponse.Content {
+	for index, v := range claudeResponse.Content {
+		if v.Type == "text" && v.Text != "" {
+			responseTextParts = append(responseTextParts, v.Text)
+		}
 		if v.Type == "tool_use" {
 			args, _ := json.Marshal(v.Input)
 			tools = append(tools, model.Tool{
-				Id:   v.Id,
-				Type: "function", // compatible with other OpenAI derivative applications
+				Id:    v.Id,
+				Index: index,
+				Type:  "function", // compatible with other OpenAI derivative applications
 				Function: model.Function{
 					Name:      v.Name,
 					Arguments: string(args),
@@ -226,6 +288,7 @@ func ResponseClaude2OpenAI(claudeResponse *Response) *openai.TextResponse {
 			})
 		}
 	}
+	responseText := strings.Join(responseTextParts, "\n")
 	choice := openai.TextResponseChoice{
 		Index: 0,
 		Message: model.Message{
@@ -242,6 +305,7 @@ func ResponseClaude2OpenAI(claudeResponse *Response) *openai.TextResponse {
 		Object:  "chat.completion",
 		Created: helper.GetTimestamp(),
 		Choices: []openai.TextResponseChoice{choice},
+		Usage:   ClaudeUsage2OpenAI(claudeResponse.Usage),
 	}
 	return &fullTextResponse
 }

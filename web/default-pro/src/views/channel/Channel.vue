@@ -87,7 +87,7 @@
             </div>
 
             <div class="col">
-              <span class="cell-muted ellipsis" :title="c.groups">{{ c.groups || '-' }}</span>
+              <span class="cell-muted ellipsis" :title="c.group">{{ c.group || '-' }}</span>
             </div>
 
             <div class="col">
@@ -196,15 +196,71 @@
           <a-input v-model="form.base_url" placeholder="https://api.openai.com" allow-clear />
         </a-form-item>
         <a-form-item field="models" :label="$t('channelPage.labelModels')">
-          <a-select
-            v-model="form.models"
-            :placeholder="$t('channelPage.selectModels')"
-            multiple
-            allow-clear
-            allow-search
-          >
-            <a-option v-for="m in availableModelOptions" :key="m" :value="m" :label="m" />
-          </a-select>
+          <div class="model-picker">
+            <div class="model-picker-header">
+              <span class="model-picker-title">
+                {{ visibleModelOptions.length ? t('channelPage.pickModelsTitle', { count: selectedModels.length }) : t('channelPage.noModelsLoaded') }}
+              </span>
+              <a-space>
+                <a-button v-if="form.type === 20 || form.type === 52" size="small" :loading="refreshingModels" @click="refreshChannelModels">
+                  {{ $t('channelPage.refreshModels') }}
+                </a-button>
+                <a-button v-if="visibleModelOptions.length" size="small" @click="selectAllModels">
+                  {{ $t('channelPage.selectAllModels') }}
+                </a-button>
+                <a-button v-if="selectedModels.length" size="small" @click="clearSelectedModels">
+                  {{ $t('channelPage.clearAllModels') }}
+                </a-button>
+                <a-button size="small" :loading="validatingModels" @click="validateChannelModels">
+                  {{ $t('channelPage.validateCatalog') }}
+                </a-button>
+              </a-space>
+            </div>
+            <a-input-search
+              v-if="visibleModelOptions.length"
+              v-model="modelSearch"
+              class="model-search"
+              :placeholder="$t('channelPage.searchModelsPlaceholder')"
+              allow-clear
+            />
+            <div v-if="filteredModelOptions.length" class="model-options">
+              <a-checkbox
+                v-for="model in filteredModelOptions"
+                :key="model"
+                :model-value="selectedModels.includes(model)"
+                @change="toggleModel(model, $event)"
+              >
+                <div class="model-option-content">
+                  <div class="model-option-name">{{ modelCatalog[model]?.name || model }}</div>
+                  <div v-if="modelCatalog[model]?.name" class="model-option-id">{{ model }}</div>
+                  <div v-if="modelCatalog[model]" class="model-option-meta">
+                    <span v-if="modelCatalog[model].context_length">{{ t('channelPage.contextLabel', { n: formatContext(modelCatalog[model].context_length) }) }}</span>
+                    <span v-if="modelCatalog[model].input_price_usd_per_million != null">{{ t('channelPage.inputPriceLabel', { price: formatPrice(modelCatalog[model].input_price_usd_per_million) }) }}</span>
+                    <span v-if="modelCatalog[model].output_price_usd_per_million != null">{{ t('channelPage.outputPriceLabel', { price: formatPrice(modelCatalog[model].output_price_usd_per_million) }) }}</span>
+                    <span v-if="modelCatalog[model].input_modalities?.length">{{ t('channelPage.inputModalitiesLabel') }}{{ modelCatalog[model].input_modalities.join('、') }}</span>
+                    <span v-if="modelCatalog[model].output_modalities?.length">{{ t('channelPage.outputModalitiesLabel') }}{{ modelCatalog[model].output_modalities.join('、') }}</span>
+                    <span v-if="modelCatalog[model].supported_parameters?.includes('tools')">{{ $t('channelPage.toolsSupported') }}</span>
+                  </div>
+                  <div v-if="modelCatalog[model]?.description" class="model-option-description" :title="modelCatalog[model].description">
+                    {{ modelCatalog[model].description }}
+                  </div>
+                </div>
+              </a-checkbox>
+            </div>
+            <div v-else-if="visibleModelOptions.length" class="model-empty">{{ $t('channelPage.noMatchingModels') }}</div>
+            <div v-else class="model-empty">{{ $t('channelPage.noModelsLoadedTip') }}</div>
+            <div class="model-manual">
+              <a-input
+                v-model="manualModels"
+                :placeholder="$t('channelPage.manualModelsPlaceholder')"
+                allow-clear
+                @press-enter="addManualModels"
+              />
+              <a-button @click="addManualModels">{{ $t('channelPage.add') }}</a-button>
+            </div>
+            <div class="form-hint">{{ $t('channelPage.modelPickerHint') }}</div>
+          </div>
+
         </a-form-item>
         <a-form-item field="model_mapping" :label="$t('channelPage.labelModelMapping')">
           <div class="form-stack">
@@ -220,6 +276,14 @@
         <a-form-item field="key" :label="$t('channelPage.labelKey')" :required="!isEdit">
           <a-input-password v-model="form.key" :placeholder="isEdit ? $t('channelPage.keyKeepHint') : 'API Key'" />
           <span v-if="isEdit" class="form-hint">{{ $t('channelPage.keyKeepHint') }}</span>
+        </a-form-item>
+        <a-form-item v-if="form.type === 52" label="OpenAI 登录">
+          <a-button :loading="oauthLoading" @click="startOpenAIOAuth">使用 OpenAI 设备码登录</a-button>
+          <div v-if="oauthFlow" class="form-hint">
+            请在新窗口完成授权；状态：{{ oauthFlow.status }}
+            <a-link v-if="oauthFlow.verify_url" :href="oauthFlow.verify_url" target="_blank">打开授权页</a-link>
+            <span v-if="oauthFlow.user_code">，设备码：{{ oauthFlow.user_code }}</span>
+          </div>
         </a-form-item>
         <a-divider :margin="6" />
         <a-form-item field="is_fallback" :label="$t('channelPage.fallback')">
@@ -244,12 +308,29 @@ import api from '@/api'
 
 const { t } = useI18n()
 
+const defaultOpenAICodexModels = [
+  'gpt-5.6',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'gpt-5.4-nano',
+  'gpt-5.3-codex',
+  'gpt-5.2-codex',
+  'gpt-5.1-codex-max',
+  'gpt-5.1-codex-mini',
+  'gpt-5-codex',
+  'codex-mini-latest',
+]
+
 // 渠道类型映射（对应后端 relay/registry 的 LegacyType）
 const channelTypeIds = [
   1, 50, 14, 33, 3, 11, 24, 51, 28, 41, 40, 15,
   47, 17, 49, 18, 48, 16, 19, 25, 23, 26, 27, 29,
   30, 31, 32, 34, 35, 36, 37, 38, 39, 42, 44,
-  45, 46, 8, 22, 21, 20, 2, 5, 7, 10, 4, 6, 9, 12, 13,
+  45, 46, 52, 53, 8, 22, 21, 20, 2, 5, 7, 10, 4, 6, 9, 12, 13,
 ]
 const typeNameMap = computed(() => {
   const map = {}
@@ -270,6 +351,7 @@ const typeColorMap = {
   37: 'orange', 38: 'gray', 39: 'arcoblue', 42: 'arcoblue',
   44: 'arcoblue', 45: 'arcoblue', 46: 'arcoblue',
   8: 'pinkpurple', 22: 'arcoblue', 21: 'purple',
+  52: 'green', 53: 'gray',
   20: 'gray', 2: 'arcoblue', 5: 'gold', 7: 'purple',
   10: 'purple', 4: 'cyan', 6: 'purple', 9: 'gold', 12: 'arcoblue',
   13: 'purple',
@@ -293,6 +375,7 @@ const loadingMore = ref(false)
 const isReachedEnd = ref(false)
 const submitting = ref(false)
 const channels = ref([])
+const total = computed(() => channels.value.length)
 const searchKeyword = ref('')
 const activePage = ref(1)
 const pageSize = ref(10)
@@ -303,13 +386,23 @@ const testingAll = ref(false)
 const updatingBalance = ref(false)
 const deletingDisabled = ref(false)
 const testingIds = ref([])
+const oauthLoading = ref(false)
+const oauthFlow = ref(null)
+const refreshingModels = ref(false)
+const validatingModels = ref(false)
+const modelOptions = ref([])
+const modelCatalog = ref({})
+const modelSearch = ref('')
+const manualModels = ref('')
+const availableModelOptions = ref([])
+const availableGroups = ref([])
 
 const formRef = ref(null)
 const form = reactive({
   type: 1,
   name: '',
   base_url: '',
-  models: [],
+  models: '',
   model_mapping: '',
   groups: [],
   key: '',
@@ -321,8 +414,79 @@ const modalTitle = computed(() =>
   isEdit.value ? t('channelPage.editChannel') : t('channelPage.addChannel'),
 )
 
-const availableModelOptions = ref([])
-const availableGroups = ref([])
+const selectedModels = computed({
+  get: () => parseModelNames(form.models),
+  set: (models) => {
+    form.models = mergeModelNames(models).join(',')
+  },
+})
+
+const visibleModelOptions = computed(() => mergeModelNames(modelOptions.value, selectedModels.value))
+const filteredModelOptions = computed(() => {
+  const keyword = modelSearch.value.trim().toLowerCase()
+  if (!keyword) return visibleModelOptions.value
+  return visibleModelOptions.value.filter((model) => {
+    const item = modelCatalog.value[model]
+    const haystack = [model, item?.name, item?.description, ...(item?.input_modalities || []), ...(item?.output_modalities || []), ...(item?.supported_parameters || [])]
+      .filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(keyword)
+  })
+})
+
+function parseModelNames(value) {
+  const values = Array.isArray(value) ? value : String(value || '').split(',')
+  return mergeModelNames(values)
+}
+
+function mergeModelNames(...groups) {
+  const result = []
+  const seen = new Set()
+  groups.flat().forEach((value) => {
+    const model = String(value || '').trim()
+    if (model && !seen.has(model)) {
+      seen.add(model)
+      result.push(model)
+    }
+  })
+  return result
+}
+
+function toggleModel(model, checked) {
+  const selected = new Set(selectedModels.value)
+  if (checked) selected.add(model)
+  else selected.delete(model)
+  selectedModels.value = Array.from(selected)
+}
+
+function selectAllModels() {
+  selectedModels.value = visibleModelOptions.value
+}
+
+function clearSelectedModels() {
+  selectedModels.value = []
+}
+
+function formatContext(value) {
+  return value >= 1000 ? `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}K` : String(value)
+}
+
+function formatPrice(value) {
+  const number = Number(value)
+  if (number === 0) return '0'
+  if (number < 0.01) return number.toFixed(4)
+  return number.toFixed(number < 1 ? 3 : 2).replace(/\.0+$/, '')
+}
+
+function addManualModels() {
+  const additions = parseModelNames(manualModels.value)
+  if (!additions.length) {
+    Message.warning('请输入至少一个模型名')
+    return
+  }
+  modelOptions.value = mergeModelNames(modelOptions.value, additions)
+  selectedModels.value = mergeModelNames(selectedModels.value, additions)
+  manualModels.value = ''
+}
 
 const pageItems = computed(() => {
   const start = (activePage.value - 1) * pageSize.value
@@ -406,12 +570,14 @@ function openCreateModal() {
   form.type = 1
   form.name = ''
   form.base_url = ''
-  form.models = []
+  form.models = ''
   form.model_mapping = ''
   form.groups = []
   form.key = ''
   form.is_fallback = false
   form.fallback_priority = 0
+  modelOptions.value = []
+  manualModels.value = ''
   modalVisible.value = true
 }
 
@@ -421,22 +587,18 @@ function openEditModal(record) {
   form.type = record.type || 1
   form.name = record.name || ''
   form.base_url = record.base_url || ''
-  form.models = parseModelsField(record.models)
+  form.models = record.models || ''
   form.model_mapping = record.model_mapping || ''
-  form.groups = parseModelsField(record.groups)
+  form.groups = parseModelNames(record.groups)
   form.key = record.key || ''
   form.is_fallback = !!record.is_fallback
   form.fallback_priority = record.fallback_priority || 0
+  modelOptions.value = parseModelNames(form.models)
+  if (form.type === 52) {
+    modelOptions.value = mergeModelNames(defaultOpenAICodexModels, modelOptions.value)
+  }
+  manualModels.value = ''
   modalVisible.value = true
-}
-
-function parseModelsField(val) {
-  if (!val) return []
-  if (Array.isArray(val)) return val.filter(Boolean)
-  return String(val)
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
 }
 
 function closeModal() {
@@ -465,9 +627,9 @@ async function handleSubmit() {
       type: form.type,
       name: form.name,
       base_url: form.base_url,
-      models: Array.isArray(form.models) ? form.models.join(',') : form.models,
+      models: form.models,
       model_mapping: form.model_mapping && form.model_mapping.trim() ? form.model_mapping : '',
-      groups: Array.isArray(form.groups) ? form.groups.join(',') : form.groups,
+      group: Array.isArray(form.groups) ? form.groups.join(',') : form.groups,
       key: form.key,
       is_fallback: form.is_fallback,
       fallback_priority: form.fallback_priority,
@@ -528,6 +690,120 @@ async function fetchGroups() {
     availableGroups.value = Array.from(ids).sort()
   } catch (e) {
     availableGroups.value = []
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function refreshChannelModels() {
+  refreshingModels.value = true
+  try {
+    const { data } = await api.post('/api/channel/models/refresh', {
+      id: editingId.value || 0,
+      type: form.type,
+      key: form.key,
+      base_url: form.base_url,
+    })
+    if (!data.success) throw new Error(data.message || '模型刷新失败')
+    let models = data.data?.models || []
+    if (!models.length && form.type === 52) {
+      models = defaultOpenAICodexModels
+    }
+    modelOptions.value = mergeModelNames(models)
+    modelCatalog.value = Object.fromEntries((data.data?.catalog || [])
+      .filter((item) => item?.id)
+      .map((item) => [item.id, item]))
+    modelSearch.value = ''
+    const count = modelOptions.value.length
+    if (data.data?.source_url === 'builtin://openaicodex') {
+      Message.success(`已加载内置 Codex 模型目录（${count} 个候选模型）`)
+    } else {
+      Message.success(`已刷新 ${count} 个模型`)
+    }
+  } catch (e) {
+    Message.error(e.response?.data?.message || e.message || '模型刷新失败')
+  } finally {
+    refreshingModels.value = false
+  }
+}
+
+async function validateChannelModels() {
+  const models = form.models
+    .split(',')
+    .map((model) => model.trim())
+    .filter(Boolean)
+  if (!models.length) {
+    Message.warning('请先填写至少一个模型名')
+    return
+  }
+
+  validatingModels.value = true
+  try {
+    const { data } = await api.post('/api/channel/models/validate', {
+      id: editingId.value || 0,
+      type: form.type,
+      key: form.key,
+      base_url: form.base_url,
+      models: models.join(','),
+    })
+    if (!data.success) throw new Error(data.message || '模型校验失败')
+
+    const result = data.data || {}
+    if (result.verification_enabled) {
+      const validModels = result.valid_models || []
+      const invalidModels = result.invalid_models || []
+      modelOptions.value = mergeModelNames(validModels)
+      form.models = validModels.join(',')
+      if (invalidModels.length) {
+        Message.warning(`已移除 ${invalidModels.length} 个不可用模型：${invalidModels.join(', ')}`)
+      } else {
+        Message.success(`模型校验通过，共 ${validModels.length} 个`)
+      }
+    } else {
+      Message.warning(data.message || '上游未提供模型目录，当前模型仅作为候选项保留')
+    }
+  } catch (e) {
+    Message.error(e.response?.data?.message || e.message || '模型校验失败')
+  } finally {
+    validatingModels.value = false
+  }
+}
+
+async function startOpenAIOAuth() {
+  oauthLoading.value = true
+  oauthFlow.value = null
+  const popup = window.open('about:blank', '_blank')
+  try {
+    const { data } = await api.post('/api/oauth/openai/login', { method: 'device_code' })
+    if (!data.success) throw new Error(data.message || 'OpenAI 登录启动失败')
+    oauthFlow.value = data.data
+    if (popup && data.data?.verify_url) popup.location.href = data.data.verify_url
+    const interval = Math.max(Number(data.data?.interval || 5), 1) * 1000
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      await sleep(interval)
+      const result = await api.post(`/api/oauth/openai/flows/${data.data.flow_id}/poll`)
+      if (!result.data.success) throw new Error(result.data.message || 'OpenAI 登录轮询失败')
+      const flow = result.data.data
+      oauthFlow.value = flow
+      if (flow.status === 'success') {
+        form.key = flow.credential || ''
+        if (!form.models) form.models = defaultOpenAICodexModels.join(',')
+        modelOptions.value = mergeModelNames(defaultOpenAICodexModels, modelOptions.value, selectedModels.value)
+        Message.success('OpenAI OAuth 登录成功，请保存渠道')
+        return
+      }
+      if (flow.status === 'error' || flow.status === 'expired') {
+        throw new Error(flow.error || 'OpenAI 登录未完成')
+      }
+    }
+    throw new Error('OpenAI 登录超时，请重试')
+  } catch (e) {
+    if (popup && !popup.closed) popup.close()
+    Message.error(e.response?.data?.message || e.message || 'OpenAI 登录失败')
+  } finally {
+    oauthLoading.value = false
   }
 }
 
@@ -885,6 +1161,97 @@ onMounted(() => {
   font-weight: 500;
   font-size: 13px;
   color: var(--color-text-2);
+}
+.model-picker {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  background: var(--color-fill-1);
+  box-sizing: border-box;
+}
+.model-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.model-picker-title {
+  font-size: 12px;
+  color: var(--color-text-2);
+}
+.model-search {
+  margin-bottom: 10px;
+}
+.model-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: 4px;
+}
+.model-options :deep(.arco-checkbox) {
+  min-width: 0;
+  margin-right: 0;
+}
+.model-options :deep(.arco-checkbox-label) {
+  min-width: 0;
+}
+.model-option-content {
+  min-width: 0;
+}
+.model-option-name {
+  overflow: hidden;
+  color: var(--color-text-1);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-option-id {
+  overflow: hidden;
+  color: var(--color-text-3);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-option-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin-top: 2px;
+  color: var(--color-text-2);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.model-option-description {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--color-text-3);
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.model-empty {
+  padding: 16px 10px;
+  color: var(--color-text-3);
+  font-size: 12px;
+  text-align: center;
+}
+.model-manual {
+  display: flex;
+  gap: 8px;
+}
+.model-manual :deep(.arco-input-wrapper) {
+  flex: 1;
 }
 .form-hint {
   margin-left: 12px;

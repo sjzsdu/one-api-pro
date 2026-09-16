@@ -75,6 +75,7 @@
           <div class="col">{{ $t('logPage.colPlan') }}</div>
           <div class="col">{{ $t('logPage.colType') }}</div>
           <div class="col">{{ $t('logPage.colModel') }}</div>
+          <div class="col">{{ $t('logPage.colResponseModel') }}</div>
           <div v-if="isAdmin" class="col">{{ $t('logPage.colUser') }}</div>
           <div class="col">{{ $t('logPage.colToken') }}</div>
           <template v-if="logType !== 5">
@@ -111,6 +112,9 @@
             <div class="col">
               <span class="cell-strong">{{ r.model_name || '-' }}</span>
             </div>
+            <div class="col">
+              <span class="cell-strong">{{ r.response_model_name || '-' }}</span>
+            </div>
             <div v-if="isAdmin" class="col">
               <span class="cell-muted">{{ r.username || '-' }}</span>
             </div>
@@ -123,7 +127,10 @@
               <div class="col col-num"><span class="cell-num">{{ formatQuota(r.quota) }}</span></div>
             </template>
             <div class="col">
-              <div class="detail-text">{{ r.content }}</div>
+              <a-tooltip v-if="r.content" :content="r.content" position="top">
+                <div class="detail-text" tabindex="0" :aria-label="`日志详情：${r.content}`">{{ r.content }}</div>
+              </a-tooltip>
+              <div v-else class="detail-text">-</div>
               <div class="detail-tags">
                 <a-tag v-if="r.elapsed_time" :color="elapsedColor(r.elapsed_time)" size="small">{{ r.elapsed_time }}ms</a-tag>
                 <a-tag v-if="r.is_stream" color="pink" size="small">Stream</a-tag>
@@ -208,7 +215,7 @@ const basePath = computed(() => (isAdmin.value ? '/api/log' : '/api/log/self'))
 const headGrid = computed(() => {
   const cols = ['180px']
   if (isAdmin.value) cols.push('120px')
-  cols.push('80px', '100px', '80px', '180px')
+  cols.push('80px', '100px', '80px', '180px', '180px')
   if (isAdmin.value) cols.push('110px')
   cols.push('130px')
   if (logType.value !== 5) cols.push('100px', '110px', '100px')

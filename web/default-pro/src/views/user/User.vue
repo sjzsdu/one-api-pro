@@ -351,6 +351,15 @@ import api from '@/api'
 const authStore = useAuthStore()
 const { t } = useI18n()
 
+const vAccessibleInput = {
+  mounted(el, { value }) {
+    const input = el.matches('input') ? el : el.querySelector('input')
+    if (!input) return
+    input.setAttribute('aria-label', value.label)
+    if (value.required) input.setAttribute('aria-required', 'true')
+  },
+}
+
 const ITEMS_PER_PAGE = 10
 // 与后端 parseUserListPagination 的 maxUserPageSize(100) 对齐：允许的每页条数。
 // Keep every option within the backend cap (maxUserPageSize = 100).
@@ -1390,4 +1399,5 @@ function renderBilling(type) {
   font-size: 13px;
   color: var(--color-text-2);
 }
+.accessible-field { width: 100%; }
 </style>

@@ -53,7 +53,18 @@
         <!-- 趋势图 -->
         <div class="panel">
           <div class="panel-head">
-            <h2 class="panel-title">{{ $t('dash.usageTrend') }}</h2>
+            <h2 class="panel-title">{{ $t('dash.usageTrendRanged', { range: dateRangeLabel }) }}</h2>
+            <div class="date-range-selector">
+              <a-radio-group v-model="dateRange" type="button" size="small" @change="handleDateRangeChange">
+                <a-radio value="7">{{ $t('dash.days7') }}</a-radio>
+                <a-radio value="30">{{ $t('dash.days30') }}</a-radio>
+                <a-radio value="90">{{ $t('dash.days90') }}</a-radio>
+              </a-radio-group>
+              <a-button type="outline" size="small" @click="exportData">
+                <template #icon><icon-download :size="14" /></template>
+                {{ $t('dash.export') }}
+              </a-button>
+            </div>
           </div>
           <a-row :gutter="12">
             <a-col :xs="24" :sm="8" v-for="t in trendItems" :key="t.field">
@@ -69,11 +80,11 @@
           </a-row>
         </div>
 
-        <!-- 模型分布（7天） -->
+        <!-- 模型分布 -->
         <div class="panel">
           <div class="panel-head">
-            <h2 class="panel-title">{{ $t('dash.modelDist') }}</h2>
-            <span class="panel-extra">{{ $t('dash.topN', { n: barModels.length || 0 }) }} · {{ $t('dash.last7d') }}</span>
+            <h2 class="panel-title">{{ $t('dash.modelDistRanged', { range: dateRangeLabel }) }}</h2>
+            <span class="panel-extra">{{ $t('dash.topN', { n: barModels.length || 0 }) }}</span>
           </div>
           <v-chart v-if="barModels.length > 0" :option="barOption" :style="{ height: '320px' }" autoresize />
           <div v-else class="chart-empty">{{ $t('dash.noData') }}</div>
@@ -190,10 +201,10 @@
         </div>
 
         <!-- 公告 -->
-        <div class="panel clickable" @click="$router.push('/log')">
+        <div class="panel">
           <div class="panel-head">
             <h2 class="panel-title">{{ $t('dash.systemNotice') }}</h2>
-            <span class="panel-link">{{ $t('dash.viewLog') }}</span>
+            <router-link class="panel-link" to="/log">{{ $t('dash.viewLog') }} →</router-link>
           </div>
           <div v-if="notice" class="notice-body" v-html="notice"></div>
           <div v-else class="notice-list">
@@ -301,7 +312,7 @@ import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import {
   IconCodeSquare, IconSend, IconArchive, IconCalendar, IconCode, IconFile, IconGift,
-  IconCopy, IconLaunch,
+  IconCopy, IconLaunch, IconDownload,
 } from '@arco-design/web-vue/es/icon'
 import VChart from 'vue-echarts'
 import QRCode from 'qrcode'
@@ -330,6 +341,8 @@ const version = ref('')
 const latestApiKey = ref(null)
 const tokenTotal = ref(0)
 const balance = ref(0)
+const dateRange = ref('7')
+const dateRangeLabel = computed(() => t(`dash.days${dateRange.value}`) || t('dash.days7'))
 
 const statData = reactive({ total_tokens: 0, total_requests: 0, total_quota: 0 })
 const dailyUsage = ref([])
@@ -612,8 +625,8 @@ const barOption = computed(() => {
 async function loadLogsFallback() {
   try {
     const basePath = authStore.isAdmin ? '/api/log' : '/api/log/self'
-    const startTs = sevenDayRange.value.start
-    const endTs = sevenDayRange.value.end
+    const startTs = dateRangeComputed.value.start
+    const endTs = dateRangeComputed.value.end
     const collected = []
     // 拉前 5 页（每页 10 条，共 50 条），只取近 7 天的消费日志
     for (let p = 0; p < 5; p++) {
@@ -785,19 +798,45 @@ async function loadSubscription() {
   } catch (e) { /* ignore */ }
 }
 
-// 计算「近 7 天」时间范围（对齐后端 SearchLogsByDayAndModel 语义）
-const sevenDayRange = computed(() => {
+// 计算时间范围（对齐后端 SearchLogsByDayAndModel 语义）
+const dateRangeComputed = computed(() => {
   const now = new Date()
   const end = Math.floor(now.getTime() / 1000)
   const startOfDay = Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000)
-  const start = startOfDay - 6 * 86400 // 包含今天共 7 天
+  const days = parseInt(dateRange.value) || 7
+  const start = startOfDay - (days - 1) * 86400 // 包含今天共 days 天
   return { start, end }
 })
+
+function handleDateRangeChange(value) {
+  dateRange.value = value
+  loadDashboard()
+}
+
+function exportData() {
+  const headers = [t('dash.model'), t('dash.date'), t('dash.requests'), t('dash.quotaUsage'), t('dash.tokenUsage')]
+  const rows = details.value.map(d => [
+    d.model_name,
+    d.day,
+    d.request_count,
+    d.quota,
+    d.prompt_tokens + d.completion_tokens
+  ])
+  
+  const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n')
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `usage-report-${dateRange.value}days-${new Date().toISOString().slice(0,10)}.csv`
+  link.click()
+  URL.revokeObjectURL(link.href)
+  Message.success(t('dash.exportSuccess'))
+}
 
 async function loadDashboard() {
   loading.value = true
   try {
-    const { start, end } = sevenDayRange.value
+    const { start, end } = dateRangeComputed.value
     const statEndpoint = authStore.isAdmin ? '/api/log/stat' : '/api/log/self/stat'
     const requests = [
       api.get('/api/user/dashboard', { params: { start, end } }).catch(() => ({ data: { success: true, data: [] } })),
@@ -807,7 +846,7 @@ async function loadDashboard() {
           username: '',
           token_name: '',
           model_name: '',
-          start_timestamp: 0,
+          start_timestamp: start,
           end_timestamp: end,
           channel: 0,
         },
@@ -880,25 +919,26 @@ function buildCharts(logs) {
     statData.total_quota = totalQuota
   }
 
-  // 2) 生成近 7 天日期序列（按 day 分组，用本地日期避免时区偏移）
+  // 2) 生成近 N 天日期序列（按 day 分组，用本地日期避免时区偏移）
   const today = new Date()
-  const last7Days = []
+  const windowDays = parseInt(dateRange.value) || 7
+  const lastNDays = []
   const fmtLocal = (d) => {
     const y = d.getFullYear()
     const m = String(d.getMonth() + 1).padStart(2, '0')
     const dd = String(d.getDate()).padStart(2, '0')
     return `${y}-${m}-${dd}`
   }
-  for (let i = 6; i >= 0; i--) {
+  for (let i = windowDays - 1; i >= 0; i--) {
     const d = new Date(today)
     d.setDate(d.getDate() - i)
-    last7Days.push(fmtLocal(d))
+    lastNDays.push(fmtLocal(d))
   }
 
   const dayMap = {}
   for (const item of list) {
     const day = item.Day ?? item.day
-    if (!day || !last7Days.includes(day)) continue
+    if (!day || !lastNDays.includes(day)) continue
     if (!dayMap[day]) {
       dayMap[day] = { requests: 0, quota: 0, tokens: 0 }
     }
@@ -911,9 +951,9 @@ function buildCharts(logs) {
     dayMap[day].tokens += prompt + completion
   }
 
-  chartData.value.requests = last7Days.map((d) => ({ date: d, value: dayMap[d]?.requests || 0 }))
-  chartData.value.quota = last7Days.map((d) => ({ date: d, value: dayMap[d]?.quota || 0 }))
-  chartData.value.tokens = last7Days.map((d) => ({ date: d, value: dayMap[d]?.tokens || 0 }))
+  chartData.value.requests = lastNDays.map((d) => ({ date: d, value: dayMap[d]?.requests || 0 }))
+  chartData.value.quota = lastNDays.map((d) => ({ date: d, value: dayMap[d]?.quota || 0 }))
+  chartData.value.tokens = lastNDays.map((d) => ({ date: d, value: dayMap[d]?.tokens || 0 }))
 
   // 3) 选出 Top 模型（按 token 总量）
   const topModels = Object.entries(modelTotals)
@@ -1050,6 +1090,13 @@ onMounted(async () => {
   color: rgb(var(--primary-6));
   cursor: pointer;
   text-decoration: none;
+}
+
+/* ============ 日期范围选择器 ============ */
+.date-range-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 /* ============ 核心指标 ============ */
@@ -1400,9 +1447,6 @@ onMounted(async () => {
 }
 .notice-item:last-child {
   border-bottom: none;
-}
-.notice-item:hover .notice-title {
-  color: rgb(var(--primary-6));
 }
 .notice-title {
   font-size: 13px;

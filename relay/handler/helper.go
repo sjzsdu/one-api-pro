@@ -285,6 +285,7 @@ func postConsumeQuota(ctx context.Context, usage *relaymodel.Usage, meta *meta.M
 		CompletionTokens:  completionTokens,
 		CachedTokens:      cachedTokens,
 		ModelName:         meta.OriginModelName,
+		ResponseModelName: meta.ActualModelName,
 		TokenName:         meta.TokenName,
 		Quota:             int(quota),
 		Content:           logContent,
