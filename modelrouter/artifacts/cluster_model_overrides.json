@@ -1,0 +1,35 @@
+{
+  "models": {
+    "gpt-5.6-sol": {
+      "copy_from": "gpt-5.5",
+      "quality_delta": 0.09,
+	  "input_cost_multiplier": 1,
+	  "output_cost_multiplier": 1,
+      "note": "Operator prior: sol > terra > luna; replace with offline evaluation evidence."
+    },
+    "gpt-5.6-terra": {
+      "copy_from": "gpt-5.5",
+      "quality_delta": 0.045,
+	  "input_cost_multiplier": 0.5,
+	  "output_cost_multiplier": 0.5,
+      "note": "Operator prior: sol > terra > luna; replace with offline evaluation evidence."
+    },
+    "gpt-5.6-luna": {
+      "copy_from": "gpt-5.5",
+      "quality_delta": 0,
+	  "input_cost_multiplier": 0.2,
+	  "output_cost_multiplier": 0.2,
+      "note": "Operator prior: sol > terra > luna; replace with offline evaluation evidence."
+    },
+    "qwen/qwen3.8-flash": {
+      "copy_from": "qwen/qwen3.7-plus",
+      "quality_delta": 0.02,
+      "note": "Bootstrap prior; replace with offline evaluation evidence."
+    },
+    "z-ai/glm-flash-latest": {
+      "copy_from": "z-ai/glm-5.2",
+      "quality_delta": -0.08,
+      "note": "Bootstrap prior; replace with offline evaluation evidence."
+    }
+  }
+}

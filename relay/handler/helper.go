@@ -20,8 +20,8 @@ import (
 	billingratio "github.com/modelbus/one-api-pro/relay/billing/ratio"
 	"github.com/modelbus/one-api-pro/relay/handler/validator"
 	"github.com/modelbus/one-api-pro/relay/meta"
-	relaymodel "github.com/modelbus/one-api-pro/relay/schema"
 	"github.com/modelbus/one-api-pro/relay/relaymode"
+	relaymodel "github.com/modelbus/one-api-pro/relay/schema"
 )
 
 func getAndValidateTextRequest(c *gin.Context, relayMode int) (*relaymodel.GeneralOpenAIRequest, error) {
@@ -156,9 +156,9 @@ func postConsumeQuota(ctx context.Context, usage *relaymodel.Usage, meta *meta.M
 						continue
 					}
 					resolvedName := resolvedModel
-				for _, windowType := range []string{dbmodel.WindowTypePeriod, dbmodel.WindowTypeWeek, dbmodel.WindowTypeMonth} {
-					windowIndex := dbmodel.CalcWindowIndex(now, up.StartTime, windowType, rule.PeriodH)
-					err := dbmodel.IncrementPlanUsage(int(up.Id), resolvedName, windowType, windowIndex, 1, int64(promptTokens), int64(completionTokens), int64(cachedTokens))
+					for _, windowType := range []string{dbmodel.WindowTypePeriod, dbmodel.WindowTypeWeek, dbmodel.WindowTypeMonth} {
+						windowIndex := dbmodel.CalcWindowIndex(now, up.StartTime, windowType, rule.PeriodH)
+						err := dbmodel.IncrementPlanUsage(int(up.Id), resolvedName, windowType, windowIndex, 1, int64(promptTokens), int64(completionTokens), int64(cachedTokens))
 						if err != nil {
 							logger.Error(ctx, fmt.Sprintf("failed to increment plan usage: %s", err.Error()))
 						}
@@ -205,6 +205,7 @@ func postConsumeQuota(ctx context.Context, usage *relaymodel.Usage, meta *meta.M
 		CompletionTokens:  completionTokens,
 		CachedTokens:      cachedTokens,
 		ModelName:         meta.OriginModelName,
+		ResponseModelName: meta.ActualModelName,
 		TokenName:         meta.TokenName,
 		Quota:             int(quota),
 		Content:           logContent,

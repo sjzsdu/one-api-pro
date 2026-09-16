@@ -291,6 +291,14 @@ func GetUserDashboard(c *gin.Context) {
 	startOfDay := now.Truncate(24*time.Hour).AddDate(0, 0, -6).Unix()
 	endOfDay := now.Truncate(24 * time.Hour).Add(24*time.Hour - time.Second).Unix()
 
+	// 支持自定义时间范围（前端日期范围选择器 7/30/90 天），缺省仍为近 7 天
+	startParam, errStart := strconv.ParseInt(c.Query("start"), 10, 64)
+	endParam, errEnd := strconv.ParseInt(c.Query("end"), 10, 64)
+	if errStart == nil && errEnd == nil && startParam > 0 && endParam > startParam {
+		startOfDay = startParam
+		endOfDay = endParam
+	}
+
 	dashboards, err := model.SearchLogsByDayAndModel(id, int(startOfDay), int(endOfDay))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{

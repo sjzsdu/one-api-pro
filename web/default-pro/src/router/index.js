@@ -75,6 +75,8 @@ const routes = [
       ] },
       { path: 'redeem', name: 'Redeem', component: () => import('@/views/redeem/Redeem.vue'), meta: { title: 'route.redeem' } },
       { path: 'chat', name: 'Chat', component: () => import('@/views/chat/Chat.vue'), meta: { title: 'route.chat' } },
+      { path: 'model-quiz', name: 'ModelQuiz', component: () => import('@/views/model-quiz/ModelQuiz.vue'), meta: { title: 'route.modelQuiz' } },
+      { path: 'models', name: 'ModelCatalog', component: () => import('@/views/model-catalog/ModelCatalog.vue'), meta: { title: 'route.models', admin: true } },
     ],
   },
   {

@@ -344,6 +344,15 @@ import api from '@/api'
 const authStore = useAuthStore()
 const { t } = useI18n()
 
+const vAccessibleInput = {
+  mounted(el, { value }) {
+    const input = el.matches('input') ? el : el.querySelector('input')
+    if (!input) return
+    input.setAttribute('aria-label', value.label)
+    if (value.required) input.setAttribute('aria-required', 'true')
+  },
+}
+
 const ITEMS_PER_PAGE = 10
 
 const loading = ref(true)
@@ -1294,4 +1303,5 @@ function renderBilling(type) {
   font-size: 13px;
   color: var(--color-text-2);
 }
+.accessible-field { width: 100%; }
 </style>

@@ -119,7 +119,32 @@ dist/one-api-pro-darwin-arm64
 
 > The `linux-*` binaries are statically linked and work on both CentOS and Ubuntu. GitHub Releases are built and published automatically by `.github/workflows/release.yml` when a `v*` tag is pushed, mirroring the local `release.sh` output.
 
-### 5. Run
+### 5. Build and install the current platform version
+
+The root `Makefile` builds the frontend first, then builds the backend with the frontend artifacts embedded, and installs the executable:
+
+```bash
+make install
+```
+
+By default it installs to `$HOME/.local/bin/one-api-pro`, which usually needs no administrator privileges.
+
+To install into a system directory, override `PREFIX` and use administrator privileges:
+
+```bash
+sudo make install PREFIX=/usr/local
+```
+
+You can also install to another prefix with `PREFIX`, or create a staging directory with `DESTDIR`:
+
+```bash
+make install PREFIX=/opt/one-api-pro
+make install DESTDIR=/tmp/one-api-pro-package PREFIX=/usr
+```
+
+Run `make build` to build without installing, and `make help` to list all targets and overridable variables.
+
+### 6. Run
 
 ```bash
 ./one-api-pro --port 3000 --log-dir ./logs

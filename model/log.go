@@ -3,6 +3,8 @@ package model
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -12,15 +14,88 @@ import (
 	"github.com/modelbus/one-api-pro/common/logger"
 )
 
+// Batch log insertion for high-throughput scenarios
+var (
+	logBatchChan    = make(chan *Log, 1000)
+	logBatchMu      sync.Mutex
+	logBatchBuf     []*Log
+	logBatchSize    = 50
+	logBatchTimeout = 5 * time.Second
+)
+
+func init() {
+	go logBatchFlusher()
+}
+
+func logBatchFlusher() {
+	ticker := time.NewTicker(logBatchTimeout)
+	defer ticker.Stop()
+	for {
+		select {
+		case log := <-logBatchChan:
+			logBatchMu.Lock()
+			logBatchBuf = append(logBatchBuf, log)
+			if len(logBatchBuf) >= logBatchSize {
+				flushLogBatch()
+			}
+			logBatchMu.Unlock()
+		case <-ticker.C:
+			logBatchMu.Lock()
+			if len(logBatchBuf) > 0 {
+				flushLogBatch()
+			}
+			logBatchMu.Unlock()
+		}
+	}
+}
+
+func flushLogBatch() {
+	if len(logBatchBuf) == 0 {
+		return
+	}
+	batch := make([]*Log, len(logBatchBuf))
+	copy(batch, logBatchBuf)
+	logBatchBuf = logBatchBuf[:0]
+	if err := LOG_DB.CreateInBatches(batch, logBatchSize).Error; err != nil {
+		logger.SysError("failed to batch insert logs: " + err.Error())
+	}
+}
+
+// RecordLogBatch sends a log to the batch channel for async insertion
+func RecordLogBatch(ctx context.Context, userId int, logType int, content string) {
+	if logType == LogTypeConsume && !config.LogConsumeEnabled {
+		return
+	}
+	log := &Log{
+		UserId:    userId,
+		Username:  GetUsernameById(userId),
+		CreatedAt: helper.GetTimestamp(),
+		Type:      logType,
+		Content:   content,
+		RequestId: helper.GetRequestID(ctx),
+	}
+	select {
+	case logBatchChan <- log:
+	default:
+		// Channel full, fall back to synchronous insert
+		logger.SysError("log batch channel full, falling back to sync insert")
+		recordLogHelper(ctx, log)
+	}
+}
+
 type Log struct {
-	Id                int    `json:"id"`
-	UserId            int    `json:"user_id" gorm:"index"`
-	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_type"`
-	Type              int    `json:"type" gorm:"index:idx_created_at_type"`
-	Content           string `json:"content"`
-	Username          string `json:"username" gorm:"index:index_username_model_name,priority:2;default:''"`
-	TokenName         string `json:"token_name" gorm:"index;default:''"`
-	ModelName         string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
+	Id        int    `json:"id"`
+	UserId    int    `json:"user_id" gorm:"index"`
+	CreatedAt int64  `json:"created_at" gorm:"bigint;index:idx_created_at_type"`
+	Type      int    `json:"type" gorm:"index:idx_created_at_type"`
+	Content   string `json:"content"`
+	Username  string `json:"username" gorm:"index:index_username_model_name,priority:2;default:''"`
+	TokenName string `json:"token_name" gorm:"index;default:''"`
+	ModelName string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
+	// ResponseModelName is the concrete model that produced the response after
+	// auto routing and channel model mapping. ModelName remains the requested /
+	// billing model for backwards-compatible accounting and filtering.
+	ResponseModelName string `json:"response_model_name" gorm:"index;default:''"`
 	Quota             int    `json:"quota" gorm:"default:0"`
 	PromptTokens      int    `json:"prompt_tokens" gorm:"default:0"`
 	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`

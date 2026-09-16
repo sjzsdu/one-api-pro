@@ -202,14 +202,15 @@
           <a-input v-model="form.name" :placeholder="$t('token.namePlaceholder')" :max-length="50" allow-clear />
         </a-form-item>
 
-        <a-form-item field="models" :label="$t('token.modelsLabel')" :extra="$t('token.modelsExtra')">
+        <a-form-item field="models" :label="$t('token.modelsLabel')" :extra="availableModels.length ? $t('token.modelsExtra') : $t('token.modelsExtraEmpty')">
           <a-select
             v-model="form.models"
-            :placeholder="$t('token.modelsPlaceholder')"
+            :placeholder="availableModels.length ? $t('token.modelsPlaceholder') : $t('token.modelsPlaceholderEmpty')"
             multiple
             allow-clear
             allow-search
           >
+            <a-option key="*" value="*" :label="$t('token.allModels')" />
             <a-option v-for="m in availableModels" :key="m" :value="m" :label="m" />
           </a-select>
         </a-form-item>
@@ -247,7 +248,7 @@
               :precision="0"
               placeholder="500000"
               :disabled="form.unlimited_quota"
-              style="flex: 1"
+              style="width: 100%"
             />
             <a-checkbox v-model="form.unlimited_quota">{{ $t('token.noQuotaLimit') }}</a-checkbox>
           </div>
@@ -383,11 +384,21 @@ import { buildTokenExpiredTime, formatExpiredTime } from '@/utils/token'
 const statusStore = useStatusStore()
 const { t } = useI18n()
 
+const vAccessibleInput = {
+  mounted(el, { value }) {
+    const input = el.matches('input') ? el : el.querySelector('input')
+    if (!input) return
+    input.setAttribute('aria-label', value.label)
+    if (value.required) input.setAttribute('aria-required', 'true')
+  },
+}
+
 const loading = ref(false)
 const loadingMore = ref(false)
 const isReachedEnd = ref(false)
 const submitting = ref(false)
 const tokens = ref([])
+const total = computed(() => tokens.value.length)
 const keyword = ref('')
 const activePage = ref(1)
 const pageSize = ref(10)
@@ -428,7 +439,6 @@ const form = reactive({
   models: [],
   subnet: '',
   expired_time: null,
-  never_expire: false,
   remain_quota: 500000,
   unlimited_quota: false,
 })
@@ -630,7 +640,6 @@ function openCreateModal() {
   form.models = []
   form.subnet = ''
   form.expired_time = null
-  form.never_expire = false
   form.remain_quota = 500000
   form.unlimited_quota = false
   modalVisible.value = true
@@ -642,9 +651,7 @@ function openEditModal(record) {
   form.name = record.name || ''
   form.models = parseModelArray(record.models)
   form.subnet = record.subnet || ''
-  const exp = record.expired_time ? record.expired_time * 1000 : null
-  form.expired_time = exp
-  form.never_expire = !exp
+  form.expired_time = record.expired_time ? record.expired_time * 1000 : null
   form.remain_quota = record.remain_quota ?? 500000
   form.unlimited_quota = !!record.unlimited_quota
   modalVisible.value = true
@@ -670,7 +677,7 @@ async function handleSubmit() {
   try {
     const payload = {
       name: form.name,
-      models: form.models.length ? form.models.join(',') : '',
+      models: form.models.includes('*') ? '*' : (form.models.length ? form.models.join(',') : ''),
       subnet: form.subnet,
       expired_time: buildTokenExpiredTime(form),
       remain_quota: form.unlimited_quota ? -1 : form.remain_quota,
@@ -1139,6 +1146,7 @@ onMounted(async () => {
   font-size: 13px;
   color: var(--color-text-2);
 }
+.accessible-field { width: 100%; }
 
 .input-with-checkbox {
   display: flex;

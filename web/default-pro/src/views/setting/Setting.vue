@@ -3,15 +3,15 @@
     <a-card :bordered="false" class="setting-card">
       <div class="setting-sidebar">
         <div class="sidebar-title">{{ $t('settingPage.sidebarTitle') }}</div>
-        <a-menu :selected-keys="[activeKey]" @menu-item-click="onMenuClick" class="setting-menu">
-          <a-menu-item key="system"><template #icon><icon-settings /></template>{{ $t('settingPage.menu.system') }}</a-menu-item>
-          <a-menu-item key="cluster" v-if="authStore.isRoot"><template #icon><icon-storage /></template>{{ $t('settingPage.menu.cluster') }}</a-menu-item>
-          <a-menu-item key="operation" v-if="authStore.isRoot"><template #icon><icon-tool /></template>{{ $t('settingPage.menu.operation') }}</a-menu-item>
-          <a-menu-item key="payment" v-if="authStore.isRoot"><template #icon><icon-alipay-circle /></template>{{ $t('settingPage.menu.payment') }}</a-menu-item>
-          <a-menu-item key="pricing" v-if="authStore.isRoot"><template #icon><icon-tags /></template>{{ $t('settingPage.menu.pricing') }}</a-menu-item>
-          <a-menu-item key="plan" v-if="authStore.isRoot"><template #icon><icon-calendar /></template>{{ $t('settingPage.menu.plan') }}</a-menu-item>
-          <a-menu-item key="topup" v-if="authStore.isRoot"><template #icon><icon-subscribe-add /></template>{{ $t('settingPage.menu.topup') }}</a-menu-item>
-          <a-menu-item key="personal"><template #icon><icon-user /></template>{{ $t('settingPage.menu.personal') }}</a-menu-item>
+        <a-menu :selected-keys="[activeKey]" @menu-item-click="onMenuClick" class="setting-menu" role="tablist" :aria-label="$t('settingPage.sidebarTitle')">
+          <a-menu-item key="system" role="tab" tabindex="0" :aria-selected="activeKey === 'system'"><template #icon><icon-settings /></template>{{ $t('settingPage.menu.system') }}</a-menu-item>
+          <a-menu-item key="cluster" v-if="authStore.isRoot" role="tab" tabindex="0" :aria-selected="activeKey === 'cluster'"><template #icon><icon-storage /></template>{{ $t('settingPage.menu.cluster') }}</a-menu-item>
+          <a-menu-item key="operation" v-if="authStore.isRoot" role="tab" tabindex="0" :aria-selected="activeKey === 'operation'"><template #icon><icon-tool /></template>{{ $t('settingPage.menu.operation') }}</a-menu-item>
+          <a-menu-item key="payment" v-if="authStore.isRoot" role="tab" tabindex="0" :aria-selected="activeKey === 'payment'"><template #icon><icon-alipay-circle /></template>{{ $t('settingPage.menu.payment') }}</a-menu-item>
+          <a-menu-item key="pricing" v-if="authStore.isRoot" role="tab" tabindex="0" :aria-selected="activeKey === 'pricing'"><template #icon><icon-tags /></template>{{ $t('settingPage.menu.pricing') }}</a-menu-item>
+          <a-menu-item key="plan" v-if="authStore.isRoot" role="tab" tabindex="0" :aria-selected="activeKey === 'plan'"><template #icon><icon-calendar /></template>{{ $t('settingPage.menu.plan') }}</a-menu-item>
+          <a-menu-item key="topup" v-if="authStore.isRoot" role="tab" tabindex="0" :aria-selected="activeKey === 'topup'"><template #icon><icon-subscribe-add /></template>{{ $t('settingPage.menu.topup') }}</a-menu-item>
+          <a-menu-item key="personal" role="tab" tabindex="0" :aria-selected="activeKey === 'personal'"><template #icon><icon-user /></template>{{ $t('settingPage.menu.personal') }}</a-menu-item>
         </a-menu>
       </div>
       <div class="setting-content">

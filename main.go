@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 
+	"github.com/modelbus/one-api-pro/channelrouter"
+	"github.com/modelbus/one-api-pro/cluster"
 	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/client"
 	"github.com/modelbus/one-api-pro/common/config"
@@ -18,8 +21,7 @@ import (
 	"github.com/modelbus/one-api-pro/controller"
 	"github.com/modelbus/one-api-pro/middleware"
 	"github.com/modelbus/one-api-pro/model"
-	"github.com/modelbus/one-api-pro/channelrouter"
-	"github.com/modelbus/one-api-pro/cluster"
+	"github.com/modelbus/one-api-pro/modelrouter"
 	"github.com/modelbus/one-api-pro/relay/adaptor/openai"
 	"github.com/modelbus/one-api-pro/router"
 )
@@ -29,6 +31,23 @@ var buildFS embed.FS
 
 func main() {
 	common.Init()
+	if *common.DaemonMode {
+		dm := common.NewDaemonManager(*common.PidFile, *common.DataDir)
+		if os.Getenv("ONE_API_PRO_DAEMON") != "1" {
+			if err := dm.EnsureCanStart(); err != nil {
+				logger.FatalLog(err.Error())
+			}
+		}
+		common.SetupDaemonSignals(dm, func() {
+			logger.SysLog("daemon shutting down...")
+		})
+		if err := common.Daemonize(common.GetDaemonLogFilePath()); err != nil {
+			logger.FatalLog("failed to daemonize: " + err.Error())
+		}
+		if err := dm.WritePidFile(); err != nil {
+			logger.FatalLog("failed to write PID file: " + err.Error())
+		}
+	}
 	logger.SetupLogger()
 	logger.SysLogf("One Api Pro %s started", common.Version)
 
@@ -98,6 +117,12 @@ func main() {
 	openai.InitTokenEncoders()
 	client.Init()
 	channelrouter.InitRouter()
+	modelrouter.InitRouter()
+	if prewarmed, err := modelrouter.PrewarmDefaultRouter(context.Background()); err != nil {
+		logger.FatalLog("failed to initialize cluster router: " + err.Error())
+	} else if prewarmed {
+		logger.SysLog("cluster router is ready")
+	}
 
 	// 初始化集群模块
 	cluster.Init(model.DB)
@@ -120,12 +145,17 @@ func main() {
 	server.Use(sessions.Sessions("session", store))
 
 	router.SetRouter(server, buildFS)
-	var port = os.Getenv("PORT")
-	if port == "" {
-		port = strconv.Itoa(*common.Port)
+	listenAddr := *common.Addr
+	if listenAddr == "" {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = strconv.Itoa(*common.Port)
+		}
+		listenAddr = ":" + port
 	}
-	logger.SysLogf("server started on http://localhost:%s", port)
-	err = server.Run(":" + port)
+	logger.SysLogf("server started on %s", listenAddr)
+
+	err = server.Run(listenAddr)
 	if err != nil {
 		logger.FatalLog("failed to start HTTP server: " + err.Error())
 	}

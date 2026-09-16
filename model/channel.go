@@ -61,8 +61,6 @@ type ChannelConfig struct {
 	VertexAIADC       string `json:"vertex_ai_adc,omitempty"`
 }
 
-
-
 func GetAllChannels(startIdx int, num int, scope string) ([]*Channel, error) {
 	var channels []*Channel
 	var err error
@@ -139,7 +137,8 @@ func (channel *Channel) ContainsModel(modelName string) bool {
 		return true
 	}
 	for _, m := range strings.Split(channel.Models, ",") {
-		if strings.TrimSpace(m) == modelName {
+		trimmed := strings.TrimSpace(m)
+		if trimmed == "*" || trimmed == modelName {
 			return true
 		}
 	}
@@ -281,11 +280,18 @@ func (channel *Channel) UpdateBalance(balance float64) {
 
 func (channel *Channel) Delete() error {
 	var err error
+	var groups []string
+	if err = DB.Model(&Ability{}).Where("channel_id = ?", channel.Id).Distinct("group").Pluck("group", &groups).Error; err != nil {
+		return err
+	}
 	err = DB.Delete(channel).Error
 	if err != nil {
 		return err
 	}
 	err = channel.DeleteAbilities()
+	if err == nil {
+		InvalidateGroupModelsCache(groups...)
+	}
 	return err
 }
 
@@ -299,6 +305,13 @@ func (channel *Channel) LoadConfig() (ChannelConfig, error) {
 		return cfg, err
 	}
 	return cfg, nil
+}
+
+// UpdateChannelKeyById updates a channel credential without exposing it through
+// the normal channel update payload. OAuth refresh uses this to persist the
+// rotated refresh/access token pair.
+func UpdateChannelKeyById(id int, key string) error {
+	return DB.Model(&Channel{}).Where("id = ?", id).Update("key", key).Error
 }
 
 func (channel *Channel) GetMaxConcurrency() int {

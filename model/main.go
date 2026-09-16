@@ -3,21 +3,23 @@ package model
 import (
 	"database/sql"
 	"fmt"
-	"os"
-	"strings"
-	"time"
+	"github.com/glebarez/sqlite"
 	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/config"
 	"github.com/modelbus/one-api-pro/common/env"
 	"github.com/modelbus/one-api-pro/common/helper"
 	appLogger "github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/common/random"
-	"github.com/glebarez/sqlite"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
+	"os"
+	"strings"
+	"sync"
+	"time"
 )
+
 var DB *gorm.DB
 var LOG_DB *gorm.DB
 
@@ -88,7 +90,7 @@ func openPostgreSQL(dsn string) (*gorm.DB, error) {
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	}), &gorm.Config{
 		PrepareStmt: true, // precompile SQL
-		Logger: newGormLogger(),
+		Logger:      newGormLogger(),
 	})
 }
 
@@ -97,7 +99,7 @@ func openMySQL(dsn string) (*gorm.DB, error) {
 	common.UsingMySQL = true
 	return gorm.Open(mysql.Open(dsn), &gorm.Config{
 		PrepareStmt: true, // precompile SQL
-		Logger: newGormLogger(),
+		Logger:      newGormLogger(),
 	})
 }
 
@@ -130,7 +132,7 @@ func openSQLite() (*gorm.DB, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)", common.SQLitePath, common.SQLiteBusyTimeout)
 	return gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		PrepareStmt: true, // precompile SQL
-		Logger: newGormLogger(),
+		Logger:      newGormLogger(),
 	})
 }
 
@@ -161,8 +163,19 @@ func InitDB() {
 	if err = InitDefaultPrices(); err != nil {
 		appLogger.SysError("failed to initialize default prices: " + err.Error())
 	}
-	InitModelPriceCache()
-	InitGroupPriceCache()
+
+	// Parallel cache initialization for faster startup
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		InitModelPriceCache()
+	}()
+	go func() {
+		defer wg.Done()
+		InitGroupPriceCache()
+	}()
+	wg.Wait()
 }
 
 func migrateDB() error {
@@ -213,6 +226,12 @@ func migrateDB() error {
 		return err
 	}
 	if err = DB.AutoMigrate(&GroupPrice{}); err != nil {
+		return err
+	}
+	if err = DB.AutoMigrate(&ModelRoutingRecord{}); err != nil {
+		return err
+	}
+	if err = DB.AutoMigrate(&ModelCatalog{}); err != nil {
 		return err
 	}
 	// Add order_id column to existing user_plans on legacy databases.

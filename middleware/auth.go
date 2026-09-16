@@ -5,6 +5,7 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/modelbus/one-api-pro/common/blacklist"
+	"github.com/modelbus/one-api-pro/common/config"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"github.com/modelbus/one-api-pro/common/network"
 	"github.com/modelbus/one-api-pro/model"
@@ -92,6 +93,9 @@ func TokenAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		key := c.Request.Header.Get("Authorization")
+		if key == "" && strings.HasPrefix(c.Request.URL.Path, "/v1/messages") {
+			key = "Bearer " + c.Request.Header.Get("x-api-key")
+		}
 		key = strings.TrimPrefix(key, "Bearer ")
 		key = strings.TrimPrefix(key, "sk-")
 		parts := strings.Split(key, "-")
@@ -124,7 +128,11 @@ func TokenAuth() func(c *gin.Context) {
 		c.Set(ctxkey.RequestModel, requestModel)
 		if token.Models != nil && *token.Models != "" {
 			c.Set(ctxkey.AvailableModels, *token.Models)
-			if requestModel != "" && !isModelInList(requestModel, *token.Models) {
+			// "auto" is a virtual routing entrypoint, not an upstream model. When
+			// auto routing is enabled every token may use it; the router still
+			// resolves the eventual model within the user's group and its channels.
+			allowAuto := requestModel == "auto" && config.ModelAutoEnabled
+			if requestModel != "" && !allowAuto && !isModelInList(requestModel, *token.Models) {
 				abortWithMessage(c, http.StatusForbidden, fmt.Sprintf("该令牌无权使用模型：%s", requestModel))
 				return
 			}
@@ -159,6 +167,9 @@ func shouldCheckModel(c *gin.Context) bool {
 		return true
 	}
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/chat/completions") {
+		return true
+	}
+	if strings.HasPrefix(c.Request.URL.Path, "/v1/messages") {
 		return true
 	}
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/images") {

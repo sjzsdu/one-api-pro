@@ -252,12 +252,18 @@ func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 				PromptTokens:      0,
 				CompletionTokens:  0,
 				CachedTokens:      0,
-				ModelName:        meta.OriginModelName,
-				TokenName:        tokenName,
-				Quota:            int(quota),
-				Content:          logContent,
-				BillingSource:    func() int { if meta.PlanId > 0 { return 1 }; return 0 }(),
-				PlanId:           meta.PlanId,
+				ModelName:         meta.OriginModelName,
+				ResponseModelName: meta.ActualModelName,
+				TokenName:         tokenName,
+				Quota:             int(quota),
+				Content:           logContent,
+				BillingSource: func() int {
+					if meta.PlanId > 0 {
+						return 1
+					}
+					return 0
+				}(),
+				PlanId: meta.PlanId,
 			})
 		}
 	}(c.Request.Context())
