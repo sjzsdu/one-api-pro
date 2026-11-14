@@ -172,53 +172,10 @@ func (d *DaemonManager) StatusDaemon() error {
 	return nil
 }
 
-// Daemonize forks the current process to background
-func Daemonize(logFile string) error {
-	// Check if already a daemon
-	if os.Getenv("ONE_API_PRO_DAEMON") == "1" {
-		return nil
-	}
-
-	// Get current executable path
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
-	}
-
-	// Build argv with argv[0] included; ForkExec does not add it for us.
-	args := buildDaemonArgs(exe, os.Args[1:])
-	stdin, err := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open daemon stdin: %w", err)
-	}
-	defer stdin.Close()
-	if err := os.MkdirAll(filepath.Dir(logFile), 0755); err != nil {
-		return fmt.Errorf("failed to create daemon log directory: %w", err)
-	}
-	output, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open daemon log file: %w", err)
-	}
-	defer output.Close()
-
-	// Fork using ForkExec
-	pid, err := syscall.ForkExec(exe, args, &syscall.ProcAttr{
-		Files: []uintptr{stdin.Fd(), output.Fd(), output.Fd()},
-		Env:   append(os.Environ(), "ONE_API_PRO_DAEMON=1"),
-		Sys: &syscall.SysProcAttr{
-			Setsid: true,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to fork process: %w", err)
-	}
-
-	// Parent exits
-	fmt.Printf("Daemon started with PID %d\n", pid)
-	os.Exit(0)
-
-	return nil // unreachable
-}
+// Daemonize is implemented per platform: daemon_unix.go forks via
+// syscall.ForkExec, while daemon_windows.go reports that background mode is
+// unsupported. Keeping the fork out of this file lets the Windows release
+// binary compile (ForkExec and SysProcAttr.Setsid do not exist there).
 
 // GetDaemonLogFilePath resolves the daemon output path independently of the
 // caller's working directory.
