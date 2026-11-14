@@ -12,7 +12,7 @@
 <p align="center">
   👉 <strong>Try the Live Demo</strong>: <a href="http://demo.one-api.pro">http://demo.one-api.pro</a>
   &nbsp;·&nbsp;
-  👉 <strong>Demo Account</strong>: <code>root</code> / <code>123456</code>
+  👉 <strong>Demo Account (public demo site only)</strong>: <code>root</code> / <code>123456</code>
   &nbsp;·&nbsp;
   👉 <strong>Development &amp; Usage Docs</strong>: <a href="http://doc.one-api.pro/">http://doc.one-api.pro/</a>
 </p>
@@ -59,6 +59,7 @@
   - [⌨️ Command-line Arguments](#%EF%B8%8F-command-line-arguments)
 - [📖 API Documentation](#-api-documentation)
 - [📦 Deployment](#-deployment)
+  - [🐳 Docker Image](#-docker-image-self-hosted)
   - [🔨 Manual Deployment](#-manual-deployment)
   - [🏢 Multi-host Deployment](#-multi-host-deployment)
   - [🌐 Decentralized Cluster Deployment](#-decentralized-cluster-deployment)
@@ -149,7 +150,7 @@ Run `make build` to build without installing, and `make help` to list all target
 ./one-api-pro --port 3000 --log-dir ./logs
 ```
 
-Visit `http://localhost:3000` and log in with the default account `root / 123456`.
+Visit `http://localhost:3000`. On a fresh database the `root` account is created with the value of `INITIAL_ROOT_PASSWORD`; if it is unset, a one-time random password is printed in the startup log (there is no fixed `123456` default anymore). Save it and change it right after the first login.
 
 > For production deployments, see [📦 Deployment](#-deployment). For API references, see [📖 API Documentation](#-api-documentation).
 
@@ -303,6 +304,7 @@ You can further customize it through environment variables or command-line argum
      - `REDIS_MASTER_NAME` — master name for Sentinel mode.
 2. `SESSION_SECRET` — pins the session key, keeping existing cookies valid across restarts.
    - Example: `SESSION_SECRET=random_string`
+   - If unset, a random UUID is generated on every startup (all sessions are invalidated after a restart) and a WARN is printed. Production deployments should always set a fixed value.
 3. `SQL_DSN` — uses an external database instead of SQLite. MySQL or PostgreSQL.
    - Examples:
      - MySQL: `SQL_DSN=root:123456@tcp(localhost:3306)/oneapi`
@@ -350,10 +352,18 @@ You can further customize it through environment variables or command-line argum
 24. `ENABLE_METRIC` — auto-disable channels with low success rate. Default `false`.
 25. `METRIC_QUEUE_SIZE` — sliding window size for success-rate statistics. Default `10`.
 26. `METRIC_SUCCESS_RATE_THRESHOLD` — success-rate threshold. Default `0.8`.
-27. `INITIAL_ROOT_TOKEN` — if set, a root token with this value is auto-created on first startup.
-28. `INITIAL_ROOT_ACCESS_TOKEN` — if set, a root access token with this value is auto-created on first startup.
-29. `ENFORCE_INCLUDE_USAGE` — force `usage` in stream responses. Default `false`.
-30. `TEST_PROMPT` — prompt used by channel/model self-tests. Default `Print your model name exactly and do not output without any other text.`.
+27. `INITIAL_ROOT_PASSWORD` — password for the initial `root` account. Applies only on a fresh database with no users.
+    - If unset, a cryptographically secure random password is generated and printed **once** in the startup log. The hard-coded `123456` default is gone.
+    - Production: always set this in `.env.secrets` and change it after the first login.
+28. `REGISTER_ENABLED` — master switch for new-user registration. Default `true`; accepts `true` / `false`.
+    - Example: `REGISTER_ENABLED=false`
+    - When explicitly set, this env var takes precedence over the database `options` table: `InitOptionMap()`, `SyncOptions()` and the admin settings page cannot overwrite it. Remove the env var and restart to hand control back to the console.
+29. `PASSWORD_REGISTER_ENABLED` — switch for password-based registration. Default `true`; same env-precedence rule as `REGISTER_ENABLED`.
+    - Example: `PASSWORD_REGISTER_ENABLED=false`
+30. `INITIAL_ROOT_TOKEN` — if set, a root token with this value is auto-created on first startup.
+31. `INITIAL_ROOT_ACCESS_TOKEN` — if set, a root access token with this value is auto-created on first startup.
+32. `ENFORCE_INCLUDE_USAGE` — force `usage` in stream responses. Default `false`.
+33. `TEST_PROMPT` — prompt used by channel/model self-tests. Default `Print your model name exactly and do not output without any other text.`.
 
 #### 🌐 Decentralized Cluster Variables
 
@@ -422,6 +432,21 @@ The full API reference lives at [docs/API.md](docs/API.md), covering:
 
 ## 📦 Deployment
 
+### 🐳 Docker Image (self-hosted)
+
+Tagged releases are published to **Docker Hub `sjzsdu/one-api-pro`** and, as a backup source, to `ghcr.io/<owner>/one-api-pro`. Both are multi-arch images (`linux/amd64` + `linux/arm64`) with a built-in `HEALTHCHECK` on `/api/status`. Pin a version tag in production (for example `sjzsdu/one-api-pro:v0.0.28`) rather than `latest`.
+
+```bash
+docker run -d --name one-api-pro \
+  --env-file .env --env-file .env.secrets \
+  -v one-api-pro-data:/app/data \
+  sjzsdu/one-api-pro:v0.0.28
+```
+
+Before exposing the service publicly, set `SESSION_SECRET`, `INITIAL_ROOT_PASSWORD` (in `.env.secrets`), `REGISTER_ENABLED=false` and `PASSWORD_REGISTER_ENABLED=false`. Use `SQL_DSN=postgres://...` for a shared PostgreSQL database. The container only needs the `/app/data` volume and an HTTP reverse proxy in front of it — no port has to be published directly.
+
+To build the image locally, run `make docker-build`: it builds `web/build/default-pro` first, so the `//go:embed all:web/build` assets are never empty. A bare `docker build` will produce a broken image because `web/build` is git-ignored.
+
 ### 🔨 Manual Deployment
 
 #### 1. Get the executable
@@ -464,7 +489,7 @@ chmod u+x one-api-pro
 
 #### 3. Access
 
-Open [http://localhost:3000/](http://localhost:3000/) and log in. The default account is `root` / `123456`.
+Open [http://localhost:3000/](http://localhost:3000/) and log in. On a fresh database the `root` password comes from `INITIAL_ROOT_PASSWORD`; when unset, a one-time random password is printed in the startup log instead of the old `123456` default.
 
 ### 🏢 Multi-host Deployment
 
