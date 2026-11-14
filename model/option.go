@@ -89,10 +89,38 @@ func InitOptionMap() {
 func loadOptionsFromDatabase() {
 	options, _ := AllOption()
 	for _, option := range options {
+		// 被环境变量接管的 key 不允许数据库值回写。
+		// Env-managed keys must never be overwritten by a stored DB option.
+		if config.IsEnvManagedOption(option.Key) {
+			continue
+		}
 		err := updateOptionMap(option.Key, option.Value)
 		if err != nil {
 			logger.SysError("failed to update option map: " + err.Error())
 		}
+	}
+	applyEnvManagedOptions()
+}
+
+// applyEnvManagedOptions 在每次数据库加载之后重新应用环境变量接管的值。
+// 同时覆盖 InitOptionMap() 的首次加载与 SyncOptions() 的周期性同步。
+// 版本: v0.0.28
+// 日期: 2026-11-14
+func applyEnvManagedOptions() {
+	overrides := config.EnvManagedOptions()
+	if len(overrides) == 0 {
+		return
+	}
+	config.OptionMapRWMutex.Lock()
+	defer config.OptionMapRWMutex.Unlock()
+	for key, value := range overrides {
+		config.OptionMap[key] = value
+	}
+	if value, ok := overrides["RegisterEnabled"]; ok {
+		config.RegisterEnabled = value == "true"
+	}
+	if value, ok := overrides["PasswordRegisterEnabled"]; ok {
+		config.PasswordRegisterEnabled = value == "true"
 	}
 }
 
@@ -121,6 +149,13 @@ func UpdateOption(key string, value string) error {
 }
 
 func updateOptionMap(key string, value string) (err error) {
+	// 环境变量显式接管时，来自数据库和后台设置页的修改一律不生效。
+	// 没有这道守卫，SyncOptions() 会用 DB 里的旧 option 重新打开公网注册。
+	// Guard: without it, SyncOptions() would re-enable public registration
+	// from a stale DB option even though REGISTER_ENABLED=false was injected.
+	if config.IsEnvManagedOption(key) {
+		return nil
+	}
 	config.OptionMapRWMutex.Lock()
 	defer config.OptionMapRWMutex.Unlock()
 	config.OptionMap[key] = value
