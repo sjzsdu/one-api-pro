@@ -1,7 +1,9 @@
 package model
 
 import (
+	crand "crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"github.com/glebarez/sqlite"
 	"github.com/modelbus/one-api-pro/common"
@@ -23,12 +25,41 @@ import (
 var DB *gorm.DB
 var LOG_DB *gorm.DB
 
+// resolveInitialRootPassword 返回首次启动创建 root 账号时使用的密码。
+// 显式设置 INITIAL_ROOT_PASSWORD 时直接采用；否则用 crypto/rand 生成一次性
+// 随机密码（generated=true），由调用方在启动日志打印一次。
+// 版本: v0.0.28
+// 日期: 2026-11-14
+func resolveInitialRootPassword() (string, bool, error) {
+	if password := os.Getenv("INITIAL_ROOT_PASSWORD"); password != "" {
+		return password, false, nil
+	}
+	buf := make([]byte, 18)
+	if _, err := crand.Read(buf); err != nil {
+		return "", true, err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), true, nil
+}
+
 func CreateRootAccountIfNeed() error {
 	var user User
 	//if user.Status != util.UserStatusEnabled {
 	if err := DB.First(&user).Error; err != nil {
-		appLogger.SysLog("no user exists, creating a root user for you: username is root, password is 123456")
-		hashedPassword, err := common.Password2Hash("123456")
+		// 历史行为是写死 123456，公网暴露等于任何人可登录后台。
+		// 现在优先用 INITIAL_ROOT_PASSWORD，否则生成随机密码并只打印一次。
+		// Legacy code always used 123456; unsafe for any public deployment.
+		password, generated, err := resolveInitialRootPassword()
+		if err != nil {
+			return err
+		}
+		if generated {
+			appLogger.SysLog("no user exists, creating a root user (username: root)")
+			appLogger.SysLogf("INITIAL_ROOT_PASSWORD is not set; generated a one-time random root password: %s", password)
+			appLogger.SysLog("this password is printed only once and cannot be recovered; save it now and change it after the first login")
+		} else {
+			appLogger.SysLog("no user exists, creating a root user (username: root, password taken from INITIAL_ROOT_PASSWORD)")
+		}
+		hashedPassword, err := common.Password2Hash(password)
 		if err != nil {
 			return err
 		}
