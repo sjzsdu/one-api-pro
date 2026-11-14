@@ -76,16 +76,24 @@ jobs:
           echo "normalized=$normalized" >> "$GITHUB_OUTPUT"
           echo "Resolved release tag: $normalized"
 
-      - name: Verify CHANGELOG exists
+      # CHANGELOG 只作为可选的 Release notes 来源，不再是发布硬门槛；
+      # 缺失时生成占位说明，保证任何 v* tag 都能正常发版。
+      # CHANGELOG is an optional source of release notes, not a hard gate;
+      # a placeholder is used when missing so any v* tag can be released.
+      - name: Prepare release notes
+        id: notes
         env:
           TAG: ${{ steps.tag.outputs.normalized }}
         run: |
           SRC="CHANGELOG/${TAG}.md"
-          if [ ! -f "$SRC" ]; then
-            echo "::error::CHANGELOG file not found: $SRC"
-            echo "Every released tag must have a matching CHANGELOG/<tag>.md before tagging."
-            echo "Create $SRC with the release notes, commit it, then re-tag or delete and re-push the tag."
-            exit 1
+          if [ -f "$SRC" ]; then
+            echo "path=$SRC" >> "$GITHUB_OUTPUT"
+            echo "Using $SRC as release notes."
+          else
+            echo "path=dist/RELEASE_NOTES.md" >> "$GITHUB_OUTPUT"
+            mkdir -p dist
+            printf 'Release %s\n\nNo CHANGELOG/%s.md found; see the commit history for changes.\n' "$TAG" "$TAG" > dist/RELEASE_NOTES.md
+            echo "::warning::CHANGELOG/${TAG}.md not found; using placeholder release notes."
           fi
 
       - name: Release
@@ -93,7 +101,7 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.normalized }}
           name: ${{ steps.tag.outputs.normalized }}
-          body_path: CHANGELOG/${{ steps.tag.outputs.normalized }}.md
+          body_path: ${{ steps.notes.outputs.path }}
           files: |
             dist/one-api-pro-linux-amd64
             dist/one-api-pro-linux-arm64
