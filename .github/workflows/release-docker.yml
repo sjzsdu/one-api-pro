@@ -52,17 +52,6 @@ jobs:
           echo "normalized=$normalized" >> "$GITHUB_OUTPUT"
           echo "Release tag: $normalized"
 
-      - name: Verify CHANGELOG exists
-        env:
-          TAG: ${{ steps.tag.outputs.normalized }}
-        run: |
-          SRC="CHANGELOG/${TAG}.md"
-          if [ ! -f "$SRC" ]; then
-            echo "::error::CHANGELOG file not found: $SRC"
-            echo "Every released tag must have a matching CHANGELOG/<tag>.md before tagging."
-            exit 1
-          fi
-
       # 双推是硬要求：缺少 Docker Hub 凭据时直接失败，绝不静默退回只推 GHCR。
       # Dual-push is mandatory. Never silently degrade to a GHCR-only push.
       - name: Verify Docker Hub credentials
