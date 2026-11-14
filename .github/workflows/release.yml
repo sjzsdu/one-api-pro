@@ -29,7 +29,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          # go.mod 声明 go 1.25.0；固定为 1.25 避免 CI 依赖 GOTOOLCHAIN=auto
+          # 现场下载工具链（下载失败会让整个 v* tag 的 Release 直接失败）。
+          # go.mod requires 1.25.0; pin it so the job never depends on a
+          # runtime toolchain download for a tagged release.
+          go-version: "1.25"
           cache: true
 
       - name: Set up Node.js
