@@ -17,6 +17,10 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}
+  # 部署仓库 deploy 的硬规范：只使用 Docker Hub 账号 sjzsdu/*，
+  # 国内服务器只配了 Docker Hub 加速器，GHCR 仅作为备份来源保留。
+  # deploy repo convention: publish to sjzsdu/* on Docker Hub; GHCR stays as a backup.
+  DOCKERHUB_IMAGE: sjzsdu/one-api-pro
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
@@ -59,11 +63,33 @@ jobs:
             exit 1
           fi
 
+      # 双推是硬要求：缺少 Docker Hub 凭据时直接失败，绝不静默退回只推 GHCR。
+      # Dual-push is mandatory. Never silently degrade to a GHCR-only push.
+      - name: Verify Docker Hub credentials
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "::error::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN secrets are not configured on this repository."
+            echo "Configure both secrets (use a Docker Hub Access Token, not the account password), then re-run."
+            echo "Refusing to fall back to a GHCR-only push."
+            exit 1
+          fi
+          echo "Docker Hub credentials present for user ${DOCKERHUB_USERNAME}."
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -76,7 +102,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_NAME }}
+          # 一个 metadata 步骤同时为两个 registry 生成同构 tags。
+          # One metadata step generates identical tag sets for both registries.
+          images: |
+            ${{ env.IMAGE_NAME }}
+            ${{ env.DOCKERHUB_IMAGE }}
           # latest=auto：仅当 tag 不含预发布后缀（-rc/-alpha/-beta 等）时打 latest
           flavor: latest=auto
           tags: |
