@@ -147,6 +147,10 @@ func Init() {
 		} else {
 			config.SessionSecret = os.Getenv("SESSION_SECRET")
 		}
+	} else {
+		// 只告警，不改默认值语义：SessionSecret 仍为启动时随机 UUID。
+		// Warn only; the default (random UUID per startup) is unchanged.
+		logger.SysWarn("SESSION_SECRET is not set: a random session secret is generated on every startup, so all user sessions become invalid after a restart. Set SESSION_SECRET to a fixed random string in production (e.g. in .env.secrets).")
 	}
 	if os.Getenv("SQLITE_PATH") != "" {
 		SQLitePath = os.Getenv("SQLITE_PATH")
