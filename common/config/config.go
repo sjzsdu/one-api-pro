@@ -42,13 +42,61 @@ var ItemsPerPage = 10
 var MaxRecentItems = 100
 
 var PasswordLoginEnabled = true
-var PasswordRegisterEnabled = true
+var PasswordRegisterEnabled = parseEnvBool("PASSWORD_REGISTER_ENABLED", true)
 var EmailVerificationEnabled = false
 var GitHubOAuthEnabled = false
 var OidcEnabled = false
 var WeChatAuthEnabled = false
 var TurnstileCheckEnabled = false
-var RegisterEnabled = true
+var RegisterEnabled = parseEnvBool("REGISTER_ENABLED", true)
+
+// envManagedOptions 记录被环境变量显式接管、禁止数据库 option 覆盖的配置项。
+// key 为 OptionMap 中的 key，value 为规范化后的 "true" / "false"。
+// 只在 ReloadConfig() 中重建；model/option.go 据此跳过 DB 写入。
+// 版本: v0.0.28
+// 日期: 2026-11-14
+var (
+	envManagedOptions      = map[string]string{}
+	envManagedOptionsMutex sync.RWMutex
+)
+
+// parseEnvBool 解析布尔环境变量；未设置、空值或非法值时返回 defaultValue。
+// 版本: v0.0.28
+// 日期: 2026-11-14
+func parseEnvBool(name string, defaultValue bool) bool {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return defaultValue
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return defaultValue
+	}
+	return value
+}
+
+// IsEnvManagedOption 判断 OptionMap 中的某个 key 是否被环境变量显式接管。
+// 版本: v0.0.28
+// 日期: 2026-11-14
+func IsEnvManagedOption(key string) bool {
+	envManagedOptionsMutex.RLock()
+	defer envManagedOptionsMutex.RUnlock()
+	_, ok := envManagedOptions[key]
+	return ok
+}
+
+// EnvManagedOptions 返回受环境变量接管的 key→规范化值快照（副本）。
+// 版本: v0.0.28
+// 日期: 2026-11-14
+func EnvManagedOptions() map[string]string {
+	envManagedOptionsMutex.RLock()
+	defer envManagedOptionsMutex.RUnlock()
+	snapshot := make(map[string]string, len(envManagedOptions))
+	for key, value := range envManagedOptions {
+		snapshot[key] = value
+	}
+	return snapshot
+}
 
 var EmailDomainRestrictionEnabled = false
 var EmailDomainWhitelist = []string{
@@ -212,4 +260,32 @@ func ReloadConfig() {
 	BatchUpdateInterval = env.Int("BATCH_UPDATE_INTERVAL", 5)
 	Theme = env.String("THEME", "default-pro")
 	GeminiVersion = env.String("GEMINI_VERSION", "v1")
+
+	// 注册开关：仅当环境变量被显式设置（非空且可解析）时才接管。
+	// 被接管的 key 会在 model/option.go 中跳过 DB 覆盖，因此首次加载
+	// InitOptionMap()、后台 UpdateOption() 以及周期性 SyncOptions() 之后
+	// 依然以环境变量为准，不会被数据库里残留的 option 重新打开注册。
+	// Registration switches: only take over when explicitly set. Env-managed
+	// keys are skipped by model/option.go so neither the initial DB load, an
+	// admin update, nor a periodic SyncOptions() can silently re-enable signup.
+	managed := make(map[string]string)
+	if raw := strings.TrimSpace(os.Getenv("REGISTER_ENABLED")); raw != "" {
+		if value, err := strconv.ParseBool(raw); err == nil {
+			RegisterEnabled = value
+			managed["RegisterEnabled"] = strconv.FormatBool(value)
+		}
+	} else {
+		RegisterEnabled = true
+	}
+	if raw := strings.TrimSpace(os.Getenv("PASSWORD_REGISTER_ENABLED")); raw != "" {
+		if value, err := strconv.ParseBool(raw); err == nil {
+			PasswordRegisterEnabled = value
+			managed["PasswordRegisterEnabled"] = strconv.FormatBool(value)
+		}
+	} else {
+		PasswordRegisterEnabled = true
+	}
+	envManagedOptionsMutex.Lock()
+	envManagedOptions = managed
+	envManagedOptionsMutex.Unlock()
 }
