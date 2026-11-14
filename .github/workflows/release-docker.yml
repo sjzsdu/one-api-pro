@@ -108,8 +108,13 @@ jobs:
             ${{ env.IMAGE_NAME }}
             ${{ env.DOCKERHUB_IMAGE }}
           # latest=auto：仅当 tag 不含预发布后缀（-rc/-alpha/-beta 等）时打 latest
+          # semver 规则输出的是不带 v 的 0.0.28；部署侧固定使用带 v 的 v0.0.28，
+          # 因此额外用 type=raw 保留一个与 git tag 同名的镜像 tag。
+          # semver rules emit 0.0.28 without the v prefix; deploy uses the
+          # v-prefixed tag, so type=raw keeps an image tag matching the git tag.
           flavor: latest=auto
           tags: |
+            type=raw,value=${{ steps.tag.outputs.normalized }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
