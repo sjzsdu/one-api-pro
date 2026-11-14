@@ -1,3 +1,12 @@
+//go:build cgo
+
+// ONNX embedder 依赖 onnxruntime_go（纯 cgo 包），只在启用 CGO 时编译。
+// CGO_ENABLED=0 的发布交叉编译（release.yml / Dockerfile）改用
+// embedder_onnx_stub.go 中的纯 Go 占位实现，避免 "build constraints
+// exclude all Go files" 导致构建失败。
+// The ONNX embedder depends on the cgo-only onnxruntime_go package and is
+// compiled only with CGO enabled; CGO-disabled release builds use the stub.
+
 package modelrouter
 
 import (
