@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  👉 <strong>Live-Demo ansehen</strong>: <a href="http://demo.one-api.pro">http://demo.one-api.pro</a>
+  👉 <strong>Live-Demo ansehen</strong>: <a href="https://oneapi.wnbgj.com/">https://oneapi.wnbgj.com/</a>
   &nbsp;·&nbsp;
   👉 <strong>Demo-Konto</strong>: <code>root</code> / <code>123456</code>
   &nbsp;·&nbsp;
-  👉 <strong>Entwicklungs- und Nutzungsdokumentation</strong>: <a href="http://doc.one-api.pro/">http://doc.one-api.pro/</a>
+  👉 <strong>Entwicklungs- und Nutzungsdokumentation</strong>: <a href="https://oneapi.wnbgj.com//">https://oneapi.wnbgj.com//</a>
 </p>
 
 <p align="center">
@@ -71,10 +71,10 @@
 
 ### 1. Die ausführbare Datei beschaffen
 
-Lade die vorkompilierte Version von den [GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) herunter oder kompiliere sie aus dem Quellcode:
+Lade die vorkompilierte Version von den [GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) herunter oder kompiliere sie aus dem Quellcode:
 
 ```bash
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ```
 
@@ -408,12 +408,12 @@ Wähle eine der folgenden Varianten:
 
 **Variante 1: Vorkompilierte Version herunterladen (empfohlen)**
 
-Lade die eigenständige ausführbare Datei für deine Plattform (Linux / macOS / Windows) von den [GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) herunter – ohne Entpacken direkt ausführbar.
+Lade die eigenständige ausführbare Datei für deine Plattform (Linux / macOS / Windows) von den [GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) herunter – ohne Entpacken direkt ausführbar.
 
 **Variante 2: One-Click-Paketierung mit release.sh**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ./release.sh            # Paketierung für mehrere Plattformen, Ausgabe im dist/-Verzeichnis
 ```
@@ -421,7 +421,7 @@ cd one-api-pro
 **Variante 3: Aus dem Quellcode kompilieren**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 
 # Frontend erstellen (Vue-3-Admin-Interface, gemäß den Themes aus web/THEMES)
@@ -827,7 +827,7 @@ Beim Löschen eines Knotens **löscht** der Admin den Datensatz **nicht physisch
 | Neuer Knoten tritt dem Cluster bei | ❌ | DBA initialisiert manuell mit `mysqldump` |
 | Knoten nach langer Offline-Phase wieder da | ❌ | DBA ergänzt manuell mit `mysqldump` |
 
-Wenn nach der Bereitstellung eine leere Seite erscheint, siehe [#97](https://github.com/modelbus/one-api-pro/issues/97).
+Wenn nach der Bereitstellung eine leere Seite erscheint, siehe [#97](https://github.com/sjzsdu/one-api-pro/issues/97).
 
 ---
 
@@ -872,7 +872,7 @@ Wenn nach der Bereitstellung eine leere Seite erscheint, siehe [#97](https://git
 - [ ] Verbrauchswarnungen und Erweiterung der Benachrichtigungskanäle (DingTalk / Feishu / WeCom usw.).
 - [ ] Kontinuierliche Aufnahme weiterer Modellplattformen.
 
-> 💡 PRs und Issues sind willkommen – siehe [Issues](https://github.com/modelbus/one-api-pro/issues).
+> 💡 PRs und Issues sind willkommen – siehe [Issues](https://github.com/sjzsdu/one-api-pro/issues).
 
 ---
 

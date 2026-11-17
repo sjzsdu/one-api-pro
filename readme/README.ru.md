@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  👉 <strong>Посмотреть онлайн-демо</strong>: <a href="http://demo.one-api.pro">http://demo.one-api.pro</a>
+  👉 <strong>Посмотреть онлайн-демо</strong>: <a href="https://oneapi.wnbgj.com/">https://oneapi.wnbgj.com/</a>
   &nbsp;·&nbsp;
   👉 <strong>Демо-аккаунт</strong>: <code>root</code> / <code>123456</code>
   &nbsp;·&nbsp;
-  👉 <strong>Документация по разработке и использованию</strong>: <a href="http://doc.one-api.pro/">http://doc.one-api.pro/</a>
+  👉 <strong>Документация по разработке и использованию</strong>: <a href="https://oneapi.wnbgj.com//">https://oneapi.wnbgj.com//</a>
 </p>
 
 <p align="center">
@@ -71,10 +71,10 @@
 
 ### 1. Получить исполняемый файл
 
-Скачайте предварительно собранную версию со страницы [GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) или соберите из исходного кода:
+Скачайте предварительно собранную версию со страницы [GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) или соберите из исходного кода:
 
 ```bash
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ```
 
@@ -408,12 +408,12 @@ One Api Pro — это **корпоративный AI API Gateway**, созда
 
 **Способ первый: скачать предварительно собранную версию (рекомендуется)**
 
-Скачайте «голый» исполняемый файл для нужной платформы (Linux / macOS / Windows) со страницы [GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) — распаковка не требуется, запускается напрямую.
+Скачайте «голый» исполняемый файл для нужной платформы (Linux / macOS / Windows) со страницы [GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) — распаковка не требуется, запускается напрямую.
 
 **Способ второй: однокнопочная сборка с помощью release.sh**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ./release.sh            # сборка для нескольких платформ, результат в каталоге dist/
 ```
@@ -421,7 +421,7 @@ cd one-api-pro
 **Способ третий: сборка из исходного кода**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 
 # Собрать фронтенд (админ-панель Vue 3, темы собираются по web/THEMES)
@@ -827,7 +827,7 @@ curl -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
 | Новый узел входит в кластер | ❌ | DBA вручную через `mysqldump` выполняет инициализацию |
 | Узел восстанавливается после длительного офлайна | ❌ | DBA вручную через `mysqldump` восполняет данные |
 
-Если после развертывания при обращении появляется пустая страница, см. [#97](https://github.com/modelbus/one-api-pro/issues/97).
+Если после развертывания при обращении появляется пустая страница, см. [#97](https://github.com/sjzsdu/one-api-pro/issues/97).
 
 ---
 
@@ -872,7 +872,7 @@ curl -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
 - [ ] Расширение каналов оповещений и уведомлений (DingTalk / Feishu / WeCom и др.)
 - [ ] Постоянное подключение новых модельных платформ
 
-> 💡 Приветствуются PR и Issue для совместного развития, подробнее см. [Issues](https://github.com/modelbus/one-api-pro/issues).
+> 💡 Приветствуются PR и Issue для совместного развития, подробнее см. [Issues](https://github.com/sjzsdu/one-api-pro/issues).
 
 ---
 

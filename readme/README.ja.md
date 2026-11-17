@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  👉 <strong>オンライン Demo を見る</strong>：<a href="http://demo.one-api.pro">http://demo.one-api.pro</a>
+  👉 <strong>オンライン Demo を見る</strong>：<a href="https://oneapi.wnbgj.com/">https://oneapi.wnbgj.com/</a>
   &nbsp;·&nbsp;
   👉 <strong>デモアカウント</strong>：<code>root</code> / <code>123456</code>
   &nbsp;·&nbsp;
-  👉 <strong>開発・利用ドキュメント</strong>：<a href="http://doc.one-api.pro/">http://doc.one-api.pro/</a>
+  👉 <strong>開発・利用ドキュメント</strong>：<a href="https://oneapi.wnbgj.com//">https://oneapi.wnbgj.com//</a>
 </p>
 
 <p align="center">
@@ -71,10 +71,10 @@
 
 ### 1. 実行可能ファイルを取得
 
-[GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) からプリコンパイル済みのバージョンをダウンロードするか、ソースからビルドします：
+[GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) からプリコンパイル済みのバージョンをダウンロードするか、ソースからビルドします：
 
 ```bash
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ```
 
@@ -408,12 +408,12 @@ One Api Pro は**エンタープライズ向け AI API ゲートウェイ**で�
 
 **方法一：プリコンパイル済みバージョンをダウンロード（推奨）**
 
-[GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) から対応プラットフォーム（Linux / macOS / Windows）の裸の実行可能ファイルをダウンロードします。解凍不要でそのまま実行できます。
+[GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) から対応プラットフォーム（Linux / macOS / Windows）の裸の実行可能ファイルをダウンロードします。解凍不要でそのまま実行できます。
 
 **方法二：release.sh でワンクリックパッケージング**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ./release.sh            # マルチプラットフォームのパッケージング、成果物は dist/ に出力
 ```
@@ -421,7 +421,7 @@ cd one-api-pro
 **方法三：ソースからコンパイル**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 
 # フロントエンドをビルド（Vue 3 管理画面、web/THEMES に従って順次ビルド）
@@ -827,7 +827,7 @@ Admin がノードを削除するとき、**物理的に削除せず** `disabled
 | 新規ノードがクラスタに参加 | ❌ | DBA が手動で `mysqldump` 初期化 |
 | ノードが長期オフライン後に復旧 | ❌ | DBA が手動で `mysqldump` を補完 |
 
-デプロイ後にアクセスして空白ページが表示される場合は、[#97](https://github.com/modelbus/one-api-pro/issues/97) を参照してください。
+デプロイ後にアクセスして空白ページが表示される場合は、[#97](https://github.com/sjzsdu/one-api-pro/issues/97) を参照してください。
 
 ---
 
@@ -872,7 +872,7 @@ Admin がノードを削除するとき、**物理的に削除せず** `disabled
 - [ ] 使用量アラートと通知チャネルの拡張（DingTalk / 飛書 / 企業微信など）
 - [ ] より多くのモデルプラットフォームの継続的な連携
 
-> 💡 PR や Issue の提出を歓迎します。詳しくは [Issues](https://github.com/modelbus/one-api-pro/issues) を参照してください。
+> 💡 PR や Issue の提出を歓迎します。詳しくは [Issues](https://github.com/sjzsdu/one-api-pro/issues) を参照してください。
 
 ---
 

@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  👉 <strong>查看線上 Demo</strong>：<a href="http://demo.one-api.pro">http://demo.one-api.pro</a>
+  👉 <strong>查看線上 Demo</strong>：<a href="https://oneapi.wnbgj.com/">https://oneapi.wnbgj.com/</a>
   &nbsp;·&nbsp;
   👉 <strong>演示帳號</strong>：<code>root</code> / <code>123456</code>
   &nbsp;·&nbsp;
-  👉 <strong>開發與使用文件</strong>：<a href="http://doc.one-api.pro/">http://doc.one-api.pro/</a>
+  👉 <strong>開發與使用文件</strong>：<a href="https://oneapi.wnbgj.com//">https://oneapi.wnbgj.com//</a>
 </p>
 
 <p align="center">
@@ -71,10 +71,10 @@
 
 ### 1. 取得可執行檔
 
-從 [GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) 下載預編譯版本，或從原始碼編譯：
+從 [GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) 下載預編譯版本，或從原始碼編譯：
 
 ```bash
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ```
 
@@ -408,12 +408,12 @@ One Api Pro 是**企業級 AI API 閘道**，以 Go 語言 + Vue 3 全新打造�
 
 **方式一：下載預編譯版本（推薦）**
 
-從 [GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) 下載對應平台的裸可執行檔（Linux / macOS / Windows），無需解壓縮即可直接執行。
+從 [GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) 下載對應平台的裸可執行檔（Linux / macOS / Windows），無需解壓縮即可直接執行。
 
 **方式二：使用 release.sh 一鍵打包**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ./release.sh            # 多平台打包，產物輸出到 dist/ 目錄
 ```
@@ -421,7 +421,7 @@ cd one-api-pro
 **方式三：從原始碼編譯**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 
 # 構建前端（Vue 3 管理後台，依序構建 web/THEMES）
@@ -827,7 +827,7 @@ Admin 刪除節點時**不實際刪除**記錄，而是設定 `disabled = true`�
 | 新節點加入集群 | ❌ | DBA 手動 `mysqldump` 初始化 |
 | 節點長期離線後恢復 | ❌ | DBA 手動 `mysqldump` 補齊 |
 
-如果部署後存取出現空白頁面，請詳見 [#97](https://github.com/modelbus/one-api-pro/issues/97)。
+如果部署後存取出現空白頁面，請詳見 [#97](https://github.com/sjzsdu/one-api-pro/issues/97)。
 
 ---
 
@@ -872,7 +872,7 @@ Admin 刪除節點時**不實際刪除**記錄，而是設定 `disabled = true`�
 - [ ] 用量告警與通知通道擴充（釘釘／飛書／企業微信等）
 - [ ] 更多模型平台的持續接入
 
-> 💡 歡迎提交 PR 或 Issue 參與共建，請詳見 [Issues](https://github.com/modelbus/one-api-pro/issues)。
+> 💡 歡迎提交 PR 或 Issue 參與共建，請詳見 [Issues](https://github.com/sjzsdu/one-api-pro/issues)。
 
 ---
 

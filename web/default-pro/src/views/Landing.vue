@@ -12,11 +12,11 @@
           <a href="#models">{{ $t('landing.navModels') }}</a>
           <a href="#download">{{ $t('landing.navDownload') }}</a>
           <a href="#faq">{{ $t('landing.navFaq') }}</a>
-          <a href="http://one-api.pro" target="_blank">{{ $t('landing.navDocs') }}</a>
+          <a href="https://oneapi.wnbgj.com/" target="_blank">{{ $t('landing.navDocs') }}</a>
         </div>
         <div class="nav-actions">
           <LangSwitcher size="small" width="110px" />
-          <a-button type="text" size="small" href="https://github.com/modelbus/one-api-pro" target="_blank" class="nav-github-btn">
+          <a-button type="text" size="small" href="https://github.com/sjzsdu/one-api-pro" target="_blank" class="nav-github-btn">
             <template #icon><icon-github /></template>
             GitHub
           </a-button>
@@ -42,7 +42,7 @@
       <div class="hero-inner">
         <div class="hero-text">
           <div class="hero-badge">
-            <a href="https://github.com/modelbus/one-api-pro" target="_blank" style="color:#165dff;text-decoration:none;">
+            <a href="https://github.com/sjzsdu/one-api-pro" target="_blank" style="color:#165dff;text-decoration:none;">
               <icon-github style="vertical-align:-2px" /> GitHub
             </a>
           </div>
@@ -58,11 +58,11 @@
               </a-button>
               <a-button size="large" shape="round" @click="scrollTo('features')">{{ $t('landing.viewFeatures') }}</a-button>
             </template>
-            <a-button size="large" shape="round" href="https://github.com/modelbus/one-api-pro" target="_blank" class="btn-gh-dark">
+            <a-button size="large" shape="round" href="https://github.com/sjzsdu/one-api-pro" target="_blank" class="btn-gh-dark">
               <template #icon><icon-github /></template>
               GitHub
             </a-button>
-            <a-button size="large" shape="round" href="https://github.com/modelbus/one-api-pro/releases" target="_blank">
+            <a-button size="large" shape="round" href="https://github.com/sjzsdu/one-api-pro/releases" target="_blank">
               {{ $t('landing.downloadNow') }} <icon-down />
             </a-button>
           </div>
@@ -192,19 +192,19 @@
         <p>{{ $t('landing.downloadSubtitle') }}</p>
       </div>
       <div class="download-grid">
-        <a href="https://github.com/modelbus/one-api-pro" target="_blank" class="download-card">
+        <a href="https://github.com/sjzsdu/one-api-pro" target="_blank" class="download-card">
           <icon-github style="font-size:36px;color:#1d2129" />
           <h3>GitHub Releases</h3>
           <p>{{ $t('landing.downloadGithubDesc') }}</p>
           <span class="dl-link">{{ $t('landing.downloadGo') }}</span>
         </a>
-        <a href="https://github.com/modelbus/one-api-pro" target="_blank" class="download-card">
+        <a href="https://github.com/sjzsdu/one-api-pro" target="_blank" class="download-card">
           <icon-code style="font-size:36px;color:#1d2129" />
           <h3>{{ $t('landing.downloadSourceTitle') }}</h3>
           <p>{{ $t('landing.downloadSourceDesc') }}</p>
           <span class="dl-link">{{ $t('landing.downloadDocs') }}</span>
         </a>
-        <a href="https://github.com/modelbus/one-api-pro#部署" target="_blank" class="download-card">
+        <a href="https://github.com/sjzsdu/one-api-pro#部署" target="_blank" class="download-card">
           <icon-cloud style="font-size:36px;color:#1d2129" />
           <h3>{{ $t('landing.downloadDockerTitle') }}</h3>
           <p>{{ $t('landing.downloadDockerDesc') }}</p>
@@ -234,18 +234,18 @@
         </div>
         <div class="footer-col">
           <h4>{{ $t('landing.footerResources') }}</h4>
-          <a href="https://github.com/modelbus/one-api-pro" target="_blank">GitHub</a>
-          <a href="https://github.com/modelbus/one-api-pro/releases" target="_blank">Releases</a>
+          <a href="https://github.com/sjzsdu/one-api-pro" target="_blank">GitHub</a>
+          <a href="https://github.com/sjzsdu/one-api-pro/releases" target="_blank">Releases</a>
         </div>
         <div class="footer-col">
           <h4>{{ $t('landing.footerDocs') }}</h4>
           <a href="#features">{{ $t('landing.footerAdvantages') }}</a>
           <a href="#compare">{{ $t('landing.footerCompare') }}</a>
-          <a href="http://one-api.pro" target="_blank">{{ $t('landing.footerOnlineDocs') }}</a>
+          <a href="https://oneapi.wnbgj.com/" target="_blank">{{ $t('landing.footerOnlineDocs') }}</a>
         </div>
       </div>
       <div class="footer-bottom">
-        &copy; {{ new Date().getFullYear() }} One Api Pro &nbsp;|&nbsp; <a href="https://github.com/modelbus/one-api-pro" target="_blank">GitHub</a> &nbsp;|&nbsp; MIT License
+        &copy; {{ new Date().getFullYear() }} One Api Pro &nbsp;|&nbsp; <a href="https://github.com/sjzsdu/one-api-pro" target="_blank">GitHub</a> &nbsp;|&nbsp; MIT License
       </div>
     </footer>
   </div>

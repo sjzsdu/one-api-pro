@@ -401,8 +401,8 @@ const changelog = computed(() => [
   { version: 'v0.0.0', date: '2026-06-01', desc: t('admin.changelogInitialDesc') },
 ])
 const contactLinks = computed(() => [
-  { label: t('admin.contactDocsLabel'), value: 'one-api.pro', href: 'http://one-api.pro' },
-  { label: t('admin.contactGithubLabel'), value: 'modelbus/one-api-pro', href: 'https://github.com/modelbus/one-api-pro' },
+  { label: t('admin.contactDocsLabel'), value: 'oneapi.wnbgj.com', href: 'https://oneapi.wnbgj.com/' },
+  { label: t('admin.contactGithubLabel'), value: 'sjzsdu/one-api-pro', href: 'https://github.com/sjzsdu/one-api-pro' },
 ])
 
 // ---------- 工具 ----------

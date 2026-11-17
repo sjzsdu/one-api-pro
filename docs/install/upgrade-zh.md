@@ -12,7 +12,7 @@ order: 6
 ## 升级前
 
 1. **备份数据库**：详见 [备份与恢复](./backup-restore)
-2. **阅读 CHANGELOG**：看升级版本对应 [CHANGELOG](https://github.com/modelbus/one-api-pro/blob/main/CHANGELOG) 的「升级注意事项」段落
+2. **阅读 CHANGELOG**：看升级版本对应 [CHANGELOG](https://github.com/sjzsdu/one-api-pro/blob/main/CHANGELOG) 的「升级注意事项」段落
 3. **检查破坏性变更**：不兼容的字段、不兼容的接口、不兼容的配置项
 
 ## 升级方式
@@ -54,7 +54,7 @@ systemctl start one-api-pro
 
 ## 升级后
 
-1. **看一遍 [CHANGELOG](https://github.com/modelbus/one-api-pro/blob/main/CHANGELOG)** 里的「升级注意事项」
+1. **看一遍 [CHANGELOG](https://github.com/sjzsdu/one-api-pro/blob/main/CHANGELOG)** 里的「升级注意事项」
 2. **登录后台 → 运营仪表盘**，对比升级前后的请求成功率
 3. **抽样几条调用日志**，确认调用行为符合预期
 4. **新功能**：有些版本需要在后台「系统设置」里手动配置（CHANGELOG 会指出）

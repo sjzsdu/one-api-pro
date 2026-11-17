@@ -19,8 +19,8 @@ function footerActions(lang) {
   const releasesText = lang === 'zh' ? '版本发布' : 'Releases'
   return (
     '<span class="op-footer-actions">' +
-    `<a class="op-footer-link" href="https://one-api.pro" target="_blank" rel="noreferrer">${ICON_SITE}<span>one-api.pro</span></a>` +
-    `<a class="op-footer-link" href="https://github.com/modelbus/one-api-pro" target="_blank" rel="noreferrer">${ICON_GITHUB}<span>GitHub</span></a>` +
+    `<a class="op-footer-link" href="https://oneapi.wnbgj.com/" target="_blank" rel="noreferrer">${ICON_SITE}<span>oneapi.wnbgj.com</span></a>` +
+    `<a class="op-footer-link" href="https://github.com/sjzsdu/one-api-pro" target="_blank" rel="noreferrer">${ICON_GITHUB}<span>GitHub</span></a>` +
     `<a class="op-footer-link" href="${releasesHref}">${ICON_RELEASE}<span>${releasesText}</span></a>` +
     '</span>'
   )
@@ -337,7 +337,7 @@ export default defineConfig({
         logo: { src: '/logo.png', alt: 'One API Pro', height: 36 },
         siteTitle: '',
         socialLinks: [
-          { icon: 'github', link: 'https://github.com/modelbus/one-api-pro', ariaLabel: 'GitHub' },
+          { icon: 'github', link: 'https://github.com/sjzsdu/one-api-pro', ariaLabel: 'GitHub' },
         ],
         nav: buildNav('zh'),
         sidebar: buildSidebar('zh'),
@@ -364,7 +364,7 @@ export default defineConfig({
         logo: { src: '/logo.png', alt: 'One API Pro', height: 36 },
         siteTitle: '',
         socialLinks: [
-          { icon: 'github', link: 'https://github.com/modelbus/one-api-pro', ariaLabel: 'GitHub' },
+          { icon: 'github', link: 'https://github.com/sjzsdu/one-api-pro', ariaLabel: 'GitHub' },
         ],
         nav: buildNav('en'),
         sidebar: buildSidebar('en'),

@@ -24,7 +24,7 @@ order: 1
 ## 2. 克隆与初始化
 
 ```bash
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 
 # 后端
@@ -144,7 +144,7 @@ cd web/default-pro && pnpm build
 ## 10. 遇到问题
 
 - **文档**：先看 [架构总览](/zh/start/architecture) 与 [故障排查](/zh/faq/troubleshooting)。
-- **Issue**：<https://github.com/modelbus/one-api-pro/issues>，按版本附诊断信息（见 [故障排查 §6](/zh/faq/troubleshooting#收集诊断信息)）。
+- **Issue**：<https://github.com/sjzsdu/one-api-pro/issues>，按版本附诊断信息（见 [故障排查 §6](/zh/faq/troubleshooting#收集诊断信息)）。
 - **Discussions**：开放性讨论 / RFC。
 
 下一步 / Next: [编码规范](/zh/contribute/code-style) · [提交规范](/zh/contribute/commit-convention) · [新增 Provider](/zh/contribute/add-provider)。

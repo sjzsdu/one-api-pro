@@ -252,14 +252,14 @@
             <h2 class="panel-title">{{ $t('dash.resources') }}</h2>
           </div>
           <div class="contact-list">
-            <a class="contact-item" href="http://one-api.pro" target="_blank">
+            <a class="contact-item" href="https://oneapi.wnbgj.com/" target="_blank">
               <span class="contact-label">{{ $t('dash.officialDocs') }}</span>
-              <span class="contact-value is-active">one-api.pro</span>
+              <span class="contact-value is-active">oneapi.wnbgj.com</span>
               <icon-launch class="contact-arrow" :size="14" />
             </a>
-            <a class="contact-item" href="https://github.com/modelbus/one-api-pro" target="_blank">
+            <a class="contact-item" href="https://github.com/sjzsdu/one-api-pro" target="_blank">
               <span class="contact-label">GitHub</span>
-              <span class="contact-value is-active">modelbus/one-api-pro</span>
+              <span class="contact-value is-active">sjzsdu/one-api-pro</span>
               <icon-launch class="contact-arrow" :size="14" />
             </a>
           </div>

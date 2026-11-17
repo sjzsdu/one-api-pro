@@ -28,7 +28,7 @@ var (
 func printHelp() {
 	fmt.Println("One Api Pro " + Version + " - All in one API service for OpenAI API.")
 	fmt.Println("Copyright (C) 2026 Leon PanPan. All rights reserved.")
-	fmt.Println("GitHub: https://github.com/modelbus/one-api-pro")
+	fmt.Println("GitHub: https://github.com/sjzsdu/one-api-pro")
 	fmt.Println("")
 	fmt.Println("Usage:")
 	fmt.Println("  one-api-pro serve [start] [--daemon] [options]")

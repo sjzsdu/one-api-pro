@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  👉 <strong>Try the Live Demo</strong>: <a href="http://demo.one-api.pro">http://demo.one-api.pro</a>
+  👉 <strong>Try the Live Demo</strong>: <a href="https://oneapi.wnbgj.com/">https://oneapi.wnbgj.com/</a>
   &nbsp;·&nbsp;
   👉 <strong>Demo Account (public demo site only)</strong>: <code>root</code> / <code>123456</code>
   &nbsp;·&nbsp;
-  👉 <strong>Development &amp; Usage Docs</strong>: <a href="http://doc.one-api.pro/">http://doc.one-api.pro/</a>
+  👉 <strong>Development &amp; Usage Docs</strong>: <a href="https://oneapi.wnbgj.com//">https://oneapi.wnbgj.com//</a>
 </p>
 
 <p align="center">
@@ -72,10 +72,10 @@
 
 ### 1. Get the binary
 
-Either download the prebuilt binary from the [GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) page, or build from source:
+Either download the prebuilt binary from the [GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) page, or build from source:
 
 ```bash
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ```
 
@@ -455,12 +455,12 @@ Choose one of the following:
 
 **Option 1: Download a prebuilt binary (recommended)**
 
-Download the bare executable for your platform (Linux / macOS / Windows) from [GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) — no extraction needed, run it directly.
+Download the bare executable for your platform (Linux / macOS / Windows) from [GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) — no extraction needed, run it directly.
 
 **Option 2: One-click packaging with release.sh**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ./release.sh            # multi-platform packaging, outputs to dist/
 ```
@@ -468,7 +468,7 @@ cd one-api-pro
 **Option 3: Build from source**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 
 # Build the Vue 3 admin console (per web/THEMES)
@@ -863,7 +863,7 @@ Cluster data sync relies entirely on **GORM callbacks + HTTP active push**:
 | New node joins cluster | ❌ | DBA runs `mysqldump` to seed |
 | Long offline node recovers | ❌ | DBA runs `mysqldump` to repair |
 
-If a freshly deployed cluster shows a blank page, see [#97](https://github.com/modelbus/one-api-pro/issues/97).
+If a freshly deployed cluster shows a blank page, see [#97](https://github.com/sjzsdu/one-api-pro/issues/97).
 
 ---
 
@@ -910,7 +910,7 @@ If a freshly deployed cluster shows a blank page, see [#97](https://github.com/m
 - [ ] Alerting & notification channels (DingTalk / Feishu / WeCom).
 - [ ] More model providers.
 
-> 💡 PRs and issues are welcome — see [issues](https://github.com/modelbus/one-api-pro/issues).
+> 💡 PRs and issues are welcome — see [issues](https://github.com/sjzsdu/one-api-pro/issues).
 
 ---
 

@@ -10,9 +10,9 @@ order: 2
 > Naming, comments, layout and alignment with AGENTS.md.
 > 命名、注释、目录结构与 AGENTS.md 的一致性。
 
-This page mirrors the root [`AGENTS.md`](https://github.com/modelbus/one-api-pro/blob/main/AGENTS.md); if anything diverges, AGENTS.md is authoritative.
+This page mirrors the root [`AGENTS.md`](https://github.com/sjzsdu/one-api-pro/blob/main/AGENTS.md); if anything diverges, AGENTS.md is authoritative.
 
-本规范的源头是仓库根目录 [`AGENTS.md`](https://github.com/modelbus/one-api-pro/blob/main/AGENTS.md)。本文是面向贡献者的「导读」+ 对外补充惯例。
+本规范的源头是仓库根目录 [`AGENTS.md`](https://github.com/sjzsdu/one-api-pro/blob/main/AGENTS.md)。本文是面向贡献者的「导读」+ 对外补充惯例。
 
 ## 1. Layout & Frontend / 目录与前端
 

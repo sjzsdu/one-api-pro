@@ -8,7 +8,7 @@
     "animation": "trace",
     "quality_profile": "showcase",
     "repository": {
-      "url": "https://github.com/modelbus/one-api-pro.git",
+      "url": "https://github.com/sjzsdu/one-api-pro.git",
       "revision": "3e11e31a6fb07c0ccdcd7d25c8ed07b079e71a18"
     },
     "views": [

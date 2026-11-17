@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  👉 <strong>تجربة النسخة التجريبية مباشرة</strong>: <a href="http://demo.one-api.pro">http://demo.one-api.pro</a>
+  👉 <strong>تجربة النسخة التجريبية مباشرة</strong>: <a href="https://oneapi.wnbgj.com/">https://oneapi.wnbgj.com/</a>
   &nbsp;·&nbsp;
   👉 <strong>حساب العرض التوضيحي</strong>: <code>root</code> / <code>123456</code>
   &nbsp;·&nbsp;
-  👉 <strong>وثائق التطوير والاستخدام</strong>: <a href="http://doc.one-api.pro/">http://doc.one-api.pro/</a>
+  👉 <strong>وثائق التطوير والاستخدام</strong>: <a href="https://oneapi.wnbgj.com//">https://oneapi.wnbgj.com//</a>
 </p>
 
 <p align="center">
@@ -71,10 +71,10 @@
 
 ### 1. الحصول على الملف التنفيذي
 
-قم بتنزيل النسخة المترجمة مسبقًا من صفحة [GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest)، أو قم بالبناء من المصدر:
+قم بتنزيل النسخة المترجمة مسبقًا من صفحة [GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest)، أو قم بالبناء من المصدر:
 
 ```bash
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ```
 
@@ -408,12 +408,12 @@ dist/one-api-pro-darwin-arm64
 
 **الطريقة الأولى: تنزيل نسخة مترجمة مسبقًا (مُوصى بها)**
 
-نزّل الملف التنفيذي المجرد (المترابط بشكل ثابت) للنظام الأساسي الخاص بك من [GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest) (Linux / macOS / Windows) — يمكن تشغيله مباشرة دون فك الضغط.
+نزّل الملف التنفيذي المجرد (المترابط بشكل ثابت) للنظام الأساسي الخاص بك من [GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest) (Linux / macOS / Windows) — يمكن تشغيله مباشرة دون فك الضغط.
 
 **الطريقة الثانية: التغليف بضغطة واحدة عبر release.sh**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ./release.sh            # التغليف متعدد المنصات، والنواتج في dist/
 ```
@@ -421,7 +421,7 @@ cd one-api-pro
 **الطريقة الثالثة: البناء من المصدر**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 
 # بناء الواجهة الأمامية (لوحة إدارة Vue 3، تُبنى وفق web/THEMES بالتتابع)
@@ -827,7 +827,7 @@ curl -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
 | عقدة جديدة تنضم للكتلة | ❌ | يهيئها DBA يدويًا عبر `mysqldump` |
 | عقدة منقطعة طويلًا تتعافى | ❌ | يصلحها DBA يدويًا عبر `mysqldump` |
 
-إذا ظهرت صفحة بيضاء عند الوصول بعد النشر، راجع [#97](https://github.com/modelbus/one-api-pro/issues/97).
+إذا ظهرت صفحة بيضاء عند الوصول بعد النشر، راجع [#97](https://github.com/sjzsdu/one-api-pro/issues/97).
 
 ---
 
@@ -872,7 +872,7 @@ curl -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
 - [ ] توسعة قنوات تنبيه وإشعار (DingTalk / Feishu / WeCom وغيرها)
 - [ ] دعم مستمر لمزيد من منصات النماذج
 
-> 💡 يُرحّب بتقديم PR أو Issue للمساهمة في التطوير المشترك، راجع [Issues](https://github.com/modelbus/one-api-pro/issues).
+> 💡 يُرحّب بتقديم PR أو Issue للمساهمة في التطوير المشترك، راجع [Issues](https://github.com/sjzsdu/one-api-pro/issues).
 
 ---
 

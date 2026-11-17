@@ -21,7 +21,7 @@ order: 4
 ## 后端
 
 ```bash
-git clone https://github.com/modelbus/one-api-pro
+git clone https://github.com/sjzsdu/one-api-pro
 cd one-api-pro
 go build -o one-api-pro .
 ```

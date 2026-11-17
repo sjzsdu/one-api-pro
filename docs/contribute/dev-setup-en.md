@@ -25,7 +25,7 @@ order: 1
 ## 2. Clone & Init / 克隆与初始化
 
 ```bash
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 
 # Backend
@@ -159,7 +159,7 @@ cd web/default-pro && pnpm build
 ## 10. Getting Help / 遇到问题
 
 - Docs first: [Architecture](/en/start/architecture) and [Troubleshooting](/en/faq/troubleshooting).
-- Issues: <https://github.com/modelbus/one-api-pro/issues>; attach diagnostics (see [Troubleshooting §6](/en/faq/troubleshooting#collecting-diagnostics)).
+- Issues: <https://github.com/sjzsdu/one-api-pro/issues>; attach diagnostics (see [Troubleshooting §6](/en/faq/troubleshooting#collecting-diagnostics)).
 - Discussions: open-ended RFC / Q&A.
 
 Next: [Code Style](/en/contribute/code-style) · [Commit Convention](/en/contribute/commit-convention) · [Add a Provider](/en/contribute/add-provider).

@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  👉 <strong>온라인 Demo 보기</strong>: <a href="http://demo.one-api.pro">http://demo.one-api.pro</a>
+  👉 <strong>온라인 Demo 보기</strong>: <a href="https://oneapi.wnbgj.com/">https://oneapi.wnbgj.com/</a>
   &nbsp;·&nbsp;
   👉 <strong>Demo 계정</strong>: <code>root</code> / <code>123456</code>
   &nbsp;·&nbsp;
-  👉 <strong>개발 및 사용 문서</strong>: <a href="http://doc.one-api.pro/">http://doc.one-api.pro/</a>
+  👉 <strong>개발 및 사용 문서</strong>: <a href="https://oneapi.wnbgj.com//">https://oneapi.wnbgj.com//</a>
 </p>
 
 <p align="center">
@@ -71,10 +71,10 @@
 
 ### 1. 실행 파일 얻기
 
-[GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest)에서 사전 빌드된 버전을 다운로드하거나 소스에서 빌드합니다:
+[GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest)에서 사전 빌드된 버전을 다운로드하거나 소스에서 빌드합니다:
 
 ```bash
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ```
 
@@ -408,12 +408,12 @@ One Api Pro는 **엔터프라이즈급 AI API Gateway**로, Go 언어 + Vue 3로
 
 **방법 1: 사전 빌드된 버전 다운로드 (권장)**
 
-[GitHub Releases](https://github.com/modelbus/one-api-pro/releases/latest)에서 해당 플랫폼의 순수 실행 파일 (Linux / macOS / Windows)을 다운로드하며, 압축 해제 없이 바로 실행할 수 있습니다.
+[GitHub Releases](https://github.com/sjzsdu/one-api-pro/releases/latest)에서 해당 플랫폼의 순수 실행 파일 (Linux / macOS / Windows)을 다운로드하며, 압축 해제 없이 바로 실행할 수 있습니다.
 
 **방법 2: release.sh로 원클릭 패키징**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 ./release.sh            # 멀티플랫폼 패키징, 산출물은 dist/ 디렉토리로 출력
 ```
@@ -421,7 +421,7 @@ cd one-api-pro
 **방법 3: 소스에서 컴파일**
 
 ```shell
-git clone https://github.com/modelbus/one-api-pro.git
+git clone https://github.com/sjzsdu/one-api-pro.git
 cd one-api-pro
 
 # 프론트엔드 빌드 (Vue 3 관리 백엔드, web/THEMES에 따라 순서대로 빌드)
@@ -827,7 +827,7 @@ Admin이 노드를 삭제할 때 **물리적으로 삭제하지 않고** `disabl
 | 새 노드 클러스터 가입 | ❌ | DBA가 수동으로 `mysqldump` 초기화 |
 | 노드 장기 오프라인 후 복구 | ❌ | DBA가 수동으로 `mysqldump` 보충 |
 
-배포 후 접속 시 빈 화면이 나타나면 [#97](https://github.com/modelbus/one-api-pro/issues/97)을 참조하세요.
+배포 후 접속 시 빈 화면이 나타나면 [#97](https://github.com/sjzsdu/one-api-pro/issues/97)을 참조하세요.
 
 ---
 
@@ -872,7 +872,7 @@ Admin이 노드를 삭제할 때 **물리적으로 삭제하지 않고** `disabl
 - [ ] 사용량 경보 및 알림 채널 확장 (DingTalk / Feishu / WeCom 등)
 - [ ] 더 많은 모델 플랫폼 지속 연동
 
-> 💡 PR 또는 Issue 제출을 환영합니다. 자세한 내용은 [Issues](https://github.com/modelbus/one-api-pro/issues)를 참조하세요.
+> 💡 PR 또는 Issue 제출을 환영합니다. 자세한 내용은 [Issues](https://github.com/sjzsdu/one-api-pro/issues)를 참조하세요.
 
 ---
 

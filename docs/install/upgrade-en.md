@@ -12,7 +12,7 @@ order: 6
 ## Before
 
 1. **Back up the database** — see [Backup & Restore](./backup-restore).
-2. **Read the [CHANGELOG](https://github.com/modelbus/one-api-pro/blob/main/CHANGELOG)** for the "Upgrade Notes" section of the target version.
+2. **Read the [CHANGELOG](https://github.com/sjzsdu/one-api-pro/blob/main/CHANGELOG)** for the "Upgrade Notes" section of the target version.
 3. **Check breaking changes** — incompatible fields, endpoints, config keys.
 
 ## Upgrade paths
@@ -53,7 +53,7 @@ If it fails, look at the specific error (usually a column-type conflict).
 
 ## After
 
-1. **Re-read [CHANGELOG](https://github.com/modelbus/one-api-pro/blob/main/CHANGELOG) "Upgrade Notes"**.
+1. **Re-read [CHANGELOG](https://github.com/sjzsdu/one-api-pro/blob/main/CHANGELOG) "Upgrade Notes"**.
 2. **Check Admin → Dashboard** — compare success rates before/after.
 3. **Sample a few call logs** — confirm behavior is as expected.
 4. **New features**: some versions require manual config in Admin → System Settings (the CHANGELOG will mention it).

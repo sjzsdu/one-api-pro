@@ -358,7 +358,7 @@ var ModelList = []string{
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Request, meta *meta.Meta) error {
 	adaptor.SetupCommonRequestHeader(c, req, meta)
 	req.Header.Set("Authorization", "Bearer "+meta.APIKey)
-	req.Header.Set("HTTP-Referer", "https://github.com/modelbus/one-api-pro")
+	req.Header.Set("HTTP-Referer", "https://github.com/sjzsdu/one-api-pro")
 	req.Header.Set("X-Title", "One Api Pro")
 	return nil
 }

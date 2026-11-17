@@ -19,7 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// https://github.com/modelbus/one-api-pro/issues/79
+// https://github.com/sjzsdu/one-api-pro/issues/79
 
 type OpenAISubscriptionResponse struct {
 	Object             string  `json:"object"`
