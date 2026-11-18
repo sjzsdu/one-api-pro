@@ -1,7 +1,7 @@
 // token.js 令牌管理页 i18n
 // Token management page i18n.
-// 版本: v0.0.21
-// 日期: 2026-09-17
+// 版本: v0.0.28
+// 日期: 2026-11-18
 // 作者: opencode
 export default {
   zh: {
@@ -63,10 +63,17 @@ export default {
       modelsModalTitle: '可用模型',
       modelsNoRestrict: '当前令牌未限制模型，以下为全部可用模型',
       modelsCount: '共 {n} 个可用模型',
+      modelsModalScopeAll: '全部模型已列出 · 共 {n} 个，该令牌可使用以下任意一个',
+      modelsModalScopeSpecific: '该令牌仅可使用以下 {n} 个模型',
+      noAvailableModels: '当前分组暂无可用模型，请先在渠道管理中配置',
+      allModelsCount: '全部 {n} 个',
       modelCountValue: '{n}个',
       notLimited: '不限制',
       guideQuickstart: '快速接入',
       guideApiKey: 'API Key',
+      guideModel: '调用模型',
+      selectModel: '选择一个模型',
+      guideModelHint: '示例会自动使用该令牌允许的模型，可切换查看',
       selectToken: '选择一个令牌',
       guideExample: '调用示例',
       copied: '已复制',
@@ -142,10 +149,17 @@ export default {
       modelsModalTitle: 'Available Models',
       modelsNoRestrict: 'This token is unrestricted; all available models are listed below',
       modelsCount: '{n} available models',
+      modelsModalScopeAll: 'All models listed · {n} total, this token can use any of them',
+      modelsModalScopeSpecific: 'This token can only use the following {n} models',
+      noAvailableModels: 'No available models in the current group. Please configure channels first',
+      allModelsCount: 'All {n}',
       modelCountValue: '{n}',
       notLimited: 'Unrestricted',
       guideQuickstart: 'Quick Start',
       guideApiKey: 'API Key',
+      guideModel: 'Model',
+      selectModel: 'Select a model',
+      guideModelHint: 'The example uses a model allowed by the selected token; switch to preview',
       selectToken: 'Select a token',
       guideExample: 'Example',
       copied: 'Copied',

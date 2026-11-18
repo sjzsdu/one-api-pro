@@ -303,10 +303,10 @@
       <div v-if="modelsModalToken" class="models-modal-body">
         <div class="models-modal-meta">
           <span v-if="currentModalModels.length === 0" class="models-modal-empty">
-            {{ $t('token.modelsNoRestrict') }}
+            {{ $t('token.noAvailableModels') }}
           </span>
           <span v-else class="models-modal-count">
-            {{ $t('token.modelsCount', { n: currentModalModels.length }) }}
+            {{ $t(modalModelsIsAll ? 'token.modelsModalScopeAll' : 'token.modelsModalScopeSpecific', { n: currentModalModels.length }) }}
           </span>
         </div>
         <div v-if="currentModalModels.length > 0" class="models-modal-list">
@@ -352,6 +352,15 @@
               </div>
             </div>
             <div class="guide-row">
+              <span class="guide-label">{{ $t('token.guideModel') }}</span>
+              <div class="guide-value">
+                <a-select v-model="guideModelId" :placeholder="$t('token.selectModel')" allow-clear style="min-width: 220px">
+                  <a-option v-for="m in guideModels" :key="m" :value="m" :label="m" />
+                </a-select>
+                <span class="guide-model-hint">{{ $t('token.guideModelHint') }}</span>
+              </div>
+            </div>
+            <div class="guide-row">
               <span class="guide-label">{{ $t('token.guideExample') }}</span>
               <pre class="guide-code"><code>{{ curlExample }}</code></pre>
             </div>
@@ -375,7 +384,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import { IconPlus, IconCopy, IconBook, IconLock, IconEye } from '@arco-design/web-vue/es/icon'
@@ -420,16 +429,28 @@ const totalCountForPager = computed(() => {
   return tokens.value.length + pageSize.value
 })
 
-const currentModalModels = computed(() => {
-  if (!modelsModalToken.value) return []
+// resolveTokenModels 解析令牌实际可用的模型清单。
+// '*' 或留空都代表「全部」，一律展开为当前分组的真实模型名，绝不省略、绝不显示裸 '*'。
+function resolveTokenModels(token) {
+  if (!token) return []
+  const arr = parseModelArray(token.models)
+  if (arr.length === 0 || arr.includes('*')) return availableModels.value || []
+  return arr
+}
+
+// 该令牌是否代表「全部模型」（用于弹窗说明来源）。
+const modalModelsIsAll = computed(() => {
+  if (!modelsModalToken.value) return false
   const arr = parseModelArray(modelsModalToken.value.models)
-  if (arr.length > 0) return arr
-  return availableModels.value || []
+  return arr.length === 0 || arr.includes('*')
 })
+
+const currentModalModels = computed(() => resolveTokenModels(modelsModalToken.value))
 
 const showGuide = ref(false)
 const guideTab = ref('quickstart')
 const guideKeyId = ref(null)
+const guideModelId = ref(null)
 
 const keyModalVisible = ref(false)
 const keyModalToken = ref(null)
@@ -476,13 +497,20 @@ const modalTitle = computed(() => (isEdit.value ? t('token.editToken') : t('toke
 
 const selectedKey = computed(() => tokens.value.find((k) => k.id === guideKeyId.value) || tokens.value[0])
 
+// 调用示例的模型下拉：只列所选令牌实际能用的模型，默认取第一个，令牌切换时重置。
+const guideModels = computed(() => resolveTokenModels(selectedKey.value))
+const guideModel = computed(
+  () => guideModels.value.find((m) => m === guideModelId.value) || guideModels.value[0] || 'gpt-4o-mini',
+)
+watch(guideKeyId, () => { guideModelId.value = null })
+
 const curlExample = computed(() => {
   const key = selectedKey.value?.key || 'sk-your-key'
   return `curl ${baseUrl.value}/v1/chat/completions \\
   -H "Authorization: Bearer ${key}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gpt-4o-mini",
+    "model": "${guideModel.value}",
     "messages": [{ "role": "user", "content": "Hello" }]
   }'`
 })
@@ -497,7 +525,7 @@ client = OpenAI(
 )
 
 resp = client.chat.completions.create(
-    model="gpt-4o-mini",
+    model="${guideModel.value}",
     messages=[{"role": "user", "content": "Hello"}],
 )
 print(resp.choices[0].message.content)`
@@ -513,7 +541,7 @@ const client = new OpenAI({
 });
 
 const resp = await client.chat.completions.create({
-  model: "gpt-4o-mini",
+  model: "${guideModel.value}",
   messages: [{ role: "user", content: "Hello" }],
 });
 console.log(resp.choices[0].message.content);`
@@ -551,7 +579,11 @@ function handleKeyModalCopy() {
 
 function formatModelCount(val) {
   const arr = parseModelArray(val)
-  if (arr.length === 0) return t('token.notLimited')
+  // '*' 或留空 = 全部模型，展示真实可用数量，绝不显示误导性的「1个 / 不限制」。
+  if (arr.length === 0 || arr.includes('*')) {
+    const n = availableModels.value?.length || 0
+    return n > 0 ? t('token.allModelsCount', { n }) : t('token.notLimited')
+  }
   return t('token.modelCountValue', { n: arr.length })
 }
 
@@ -1331,6 +1363,10 @@ onMounted(async () => {
   border-radius: 4px;
   border: 1px solid var(--color-fill-3);
   word-break: break-all;
+}
+.guide-model-hint {
+  font-size: 12px;
+  color: var(--color-text-3);
 }
 .guide-code {
   margin: 0;
