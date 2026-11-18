@@ -40,6 +40,7 @@ const base = {
       redeem: '兑换',
       plans: '套餐',
       orders: '订单',
+      models: '模型',
     },
     layout: {
       breadcrumbHome: '首页',
@@ -725,6 +726,7 @@ const base = {
       redeem: 'Redeem',
       plans: 'Plans',
       orders: 'Orders',
+      models: 'Models',
     },
     layout: {
       breadcrumbHome: 'Home',

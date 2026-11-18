@@ -25,10 +25,6 @@
           <template #icon><icon-message /></template>
           {{ $t('menu.chat') }}
         </a-menu-item>
-        <a-menu-item key="/model-quiz" role="menuitem" tabindex="0" :aria-current="route.path === '/model-quiz' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/model-quiz')">
-          <template #icon><icon-experiment /></template>
-          {{ $t('menu.modelQuiz') }}
-        </a-menu-item>
         <a-menu-item key="/models" role="menuitem" tabindex="0" :aria-current="route.path === '/models' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/models')">
           <template #icon><icon-apps /></template>
           {{ $t('menu.models') }}
@@ -176,7 +172,7 @@ import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useStatusStore } from '@/stores/status'
-import { IconDashboard, IconMessage, IconApps, IconCode, IconGift, IconArchive, IconUserGroup, IconCalendar, IconFile, IconSettings, IconExport, IconUser, IconDown, IconStorage, IconBarChart, IconCopy, IconExperiment } from '@arco-design/web-vue/es/icon'
+import { IconDashboard, IconMessage, IconApps, IconCode, IconGift, IconArchive, IconUserGroup, IconCalendar, IconFile, IconSettings, IconExport, IconUser, IconDown, IconStorage, IconBarChart, IconCopy } from '@arco-design/web-vue/es/icon'
 import LangSwitcher from '@/components/LangSwitcher.vue'
 import api from '@/api'
 import logoPng from '@/assets/logo.png'

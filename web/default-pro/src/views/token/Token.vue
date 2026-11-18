@@ -462,9 +462,14 @@ const rules = {
 }
 
 const baseUrl = computed(() => {
-  const u = statusStore.status?.server_address || ''
-  if (!u) return ''
-  return u.replace(/\/+$/, '')
+  const configured = (statusStore.status?.server_address || '').replace(/\/+$/, '')
+  // 未配置服务器地址、或仍是内置默认值时，自动使用当前访问域名。
+  // 这样部署后无需手动配置即可展示正确的 Base URL；管理员显式配置的合法地址始终优先。
+  if (!configured || configured === 'http://localhost:3000') {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return origin.replace(/\/+$/, '')
+  }
+  return configured
 })
 
 const modalTitle = computed(() => (isEdit.value ? t('token.editToken') : t('token.addToken')))
