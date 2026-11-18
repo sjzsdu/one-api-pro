@@ -82,6 +82,12 @@ func main() {
 
 	// Initialize options
 	model.InitOptionMap()
+	// 对账 abilities：历史导入/直接改库的渠道不会生成 abilities 记录，
+	// 导致令牌页可用模型、/v1/models、model auto 路由取不到模型。
+	// 启动时从 channels 补齐缺失记录（只补不删，幂等）。失败不阻断启动。
+	if _, err := model.ReconcileAbilitiesFromChannels(); err != nil {
+		logger.SysError("failed to reconcile abilities from channels: " + err.Error())
+	}
 	logger.SysLog(fmt.Sprintf("using theme %s", config.Theme))
 	if err := common.ValidateEmbeddedTheme(buildFS, "web/build", config.Theme); err != nil {
 		logger.SysError(err.Error())

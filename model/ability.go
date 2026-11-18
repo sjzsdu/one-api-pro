@@ -2,12 +2,14 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
 	"gorm.io/gorm"
 
 	"github.com/modelbus/one-api-pro/common"
+	"github.com/modelbus/one-api-pro/common/logger"
 )
 
 type Ability struct {
@@ -192,4 +194,67 @@ func GetGroupModelsFromChannels(group string) []string {
 	}
 	sort.Strings(models)
 	return models
+}
+
+// ReconcileAbilitiesFromChannels 启动/运行期对账：把 channels 表派生但 abilities 表
+// 缺失的 (group, model, channel_id) 记录补齐，语义等价于 migration_v0.3-v0.4.sql 的
+// NOT EXISTS 插入。只补不删，不覆盖已有记录的 priority/enabled，避免打断手动调优。
+// 覆盖典型故障：历史导入渠道、直接改库、其他节点创建渠道后 abilities 表为空/缺失。
+// 返回本次补写的记录数。
+func ReconcileAbilitiesFromChannels() (int, error) {
+	var channels []*Channel
+	if err := DB.Find(&channels).Error; err != nil {
+		return 0, err
+	}
+	if len(channels) == 0 {
+		return 0, nil
+	}
+	var existing []Ability
+	if err := DB.Find(&existing).Error; err != nil {
+		return 0, err
+	}
+	type abilityKey struct {
+		Group     string
+		Model     string
+		ChannelId int
+	}
+	seen := make(map[abilityKey]struct{}, len(existing))
+	for _, a := range existing {
+		seen[abilityKey{a.Group, a.Model, a.ChannelId}] = struct{}{}
+	}
+	var toCreate []Ability
+	affectedGroups := make(map[string]struct{})
+	for _, channel := range channels {
+		models := uniqueTrimmedValues(strings.Split(channel.Models, ","))
+		groups := uniqueTrimmedValues(strings.Split(channel.Group, ","))
+		for _, m := range models {
+			for _, g := range groups {
+				k := abilityKey{g, m, channel.Id}
+				if _, ok := seen[k]; ok {
+					continue
+				}
+				toCreate = append(toCreate, Ability{
+					Group:     g,
+					Model:     m,
+					ChannelId: channel.Id,
+					Enabled:   channel.Status == ChannelStatusEnabled,
+					Priority:  channel.Priority,
+				})
+				affectedGroups[g] = struct{}{}
+			}
+		}
+	}
+	if len(toCreate) == 0 {
+		return 0, nil
+	}
+	if err := DB.Create(&toCreate).Error; err != nil {
+		return 0, err
+	}
+	groups := make([]string, 0, len(affectedGroups))
+	for g := range affectedGroups {
+		groups = append(groups, g)
+	}
+	InvalidateGroupModelsCache(groups...)
+	logger.SysLog(fmt.Sprintf("abilities reconciled from channels: %d records added", len(toCreate)))
+	return len(toCreate), nil
 }

@@ -119,3 +119,91 @@ func TestGetGroupModelsFromChannelsEmptyGroup(t *testing.T) {
 		t.Errorf("GetGroupModelsFromChannels(\"\") = %v, want empty", got)
 	}
 }
+
+func TestReconcileAbilitiesFromChannelsFillsEmptyTable(t *testing.T) {
+	db := setupGroupModelsTestDB(t)
+	withTestDB(t, db)
+
+	db.Create(&Channel{Id: 1, Status: ChannelStatusEnabled, Group: "default,vip", Models: "gpt-4o, claude-3"})
+	db.Create(&Channel{Id: 2, Status: ChannelStatusManuallyDisabled, Group: "default", Models: "old-model"})
+
+	added, err := ReconcileAbilitiesFromChannels()
+	if err != nil {
+		t.Fatalf("ReconcileAbilitiesFromChannels: %v", err)
+	}
+	// 渠道1：2 模型 × 2 分组 = 4；渠道2：1 模型 × 1 分组 = 1，共 5 条。
+	if added != 5 {
+		t.Errorf("added = %d, want 5", added)
+	}
+
+	var count int64
+	db.Model(&Ability{}).Count(&count)
+	if count != 5 {
+		t.Errorf("abilities count = %d, want 5", count)
+	}
+	// 停用渠道写入的 ability 应为 disabled。
+	var disabled Ability
+	if err := db.Where("channel_id = ? AND model = ?", 2, "old-model").First(&disabled).Error; err != nil {
+		t.Fatalf("query disabled ability: %v", err)
+	}
+	if disabled.Enabled {
+		t.Errorf("ability for disabled channel should have Enabled=false")
+	}
+
+	// 补齐后 GetGroupModels 应直接命中 abilities，返回具体模型。
+	got, err := GetGroupModels(context.Background(), "default")
+	if err != nil {
+		t.Fatalf("GetGroupModels: %v", err)
+	}
+	want := []string{"claude-3", "gpt-4o"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("GetGroupModels(default) = %v, want %v", got, want)
+	}
+}
+
+func TestReconcileAbilitiesFromChannelsIsIdempotent(t *testing.T) {
+	db := setupGroupModelsTestDB(t)
+	withTestDB(t, db)
+
+	db.Create(&Channel{Id: 1, Status: ChannelStatusEnabled, Group: "default", Models: "gpt-4o"})
+
+	if _, err := ReconcileAbilitiesFromChannels(); err != nil {
+		t.Fatalf("first reconcile: %v", err)
+	}
+	// 第二次不应再插入任何记录。
+	added, err := ReconcileAbilitiesFromChannels()
+	if err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	if added != 0 {
+		t.Errorf("second reconcile added = %d, want 0 (idempotent)", added)
+	}
+	var count int64
+	db.Model(&Ability{}).Count(&count)
+	if count != 1 {
+		t.Errorf("abilities count = %d, want 1", count)
+	}
+}
+
+func TestReconcileAbilitiesPreservesExistingSettings(t *testing.T) {
+	db := setupGroupModelsTestDB(t)
+	withTestDB(t, db)
+
+	db.Create(&Channel{Id: 1, Status: ChannelStatusEnabled, Group: "default", Models: "gpt-4o"})
+	// 预置一条手工调整过 priority 的 ability。
+	priority := int64(99)
+	db.Create(&Ability{Group: "default", Model: "gpt-4o", ChannelId: 1, Enabled: true, Priority: &priority})
+
+	added, err := ReconcileAbilitiesFromChannels()
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if added != 0 {
+		t.Errorf("added = %d, want 0 (existing record must not be duplicated)", added)
+	}
+	var got Ability
+	db.Where("channel_id = ? AND model = ?", 1, "gpt-4o").First(&got)
+	if got.Priority == nil || *got.Priority != 99 {
+		t.Errorf("existing ability priority overwritten: got %v, want 99", got.Priority)
+	}
+}

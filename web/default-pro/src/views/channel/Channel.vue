@@ -188,6 +188,7 @@
             multiple
             allow-clear
             allow-search
+            allow-create
           >
             <a-option v-for="g in availableGroups" :key="g" :value="g" :label="g" />
           </a-select>
@@ -395,7 +396,9 @@ const modelCatalog = ref({})
 const modelSearch = ref('')
 const manualModels = ref('')
 const availableModelOptions = ref([])
-const availableGroups = ref([])
+// 来自 /api/group/ 的分组目录；实际可选项还要合并「已有渠道的分组」
+// 和「当前表单已选分组」，见下方 availableGroups computed。
+const apiGroups = ref([])
 
 const formRef = ref(null)
 const form = reactive({
@@ -408,6 +411,25 @@ const form = reactive({
   key: '',
   is_fallback: false,
   fallback_priority: 0,
+})
+
+// 分组下拉的选项来源（三路合并，去重排序）：
+// 1. /api/group/ 返回的分组目录；
+// 2. 已加载渠道里实际使用的分组（历史分组即使没配价格也必须能选到）；
+// 3. 当前表单已选的分组（避免回填值因不在选项里而显示异常）。
+const availableGroups = computed(() => {
+  const ids = new Set(apiGroups.value || [])
+  channels.value.forEach((c) => {
+    parseModelNames(c.group).forEach((g) => {
+      if (g) ids.add(g)
+    })
+  })
+  if (Array.isArray(form.groups)) {
+    form.groups.forEach((g) => {
+      if (g) ids.add(g)
+    })
+  }
+  return Array.from(ids).sort()
 })
 
 const modalTitle = computed(() =>
@@ -589,7 +611,10 @@ function openEditModal(record) {
   form.base_url = record.base_url || ''
   form.models = record.models || ''
   form.model_mapping = record.model_mapping || ''
-  form.groups = parseModelNames(record.groups)
+  // 后端 Channel 的 JSON 字段是 group（单数，逗号分隔），不存在 groups。
+  // 之前读 record.groups 恒为 undefined，导致编辑时分组永远是空的：
+  // 用户不改分组直接保存就会把 group 写成空串，渠道从此不属于任何分组。
+  form.groups = parseModelNames(record.group || record.groups)
   form.key = record.key || ''
   form.is_fallback = !!record.is_fallback
   form.fallback_priority = record.fallback_priority || 0
@@ -609,6 +634,12 @@ function closeModal() {
 async function handleSubmit() {
   const errors = await formRef.value?.validate()
   if (errors) return
+  // 分组为空会让渠道不属于任何组：abilities 不会生成，用户侧永远看不到该渠道的模型。
+  // 过去编辑时回填失效 + 允许清空，正是「改了分组不生效」的直接原因。
+  if (!Array.isArray(form.groups) || form.groups.filter((g) => String(g || '').trim()).length === 0) {
+    Message.error(t('channelPage.groupRequired'))
+    return
+  }
   if (form.model_mapping && form.model_mapping.trim()) {
     try {
       const parsed = JSON.parse(form.model_mapping)
@@ -677,19 +708,9 @@ async function fetchAvailableModels() {
 async function fetchGroups() {
   try {
     const { data } = await api.get('/api/group/')
-    const ids = new Set()
-    const list = data?.data || []
-    list.forEach((g) => {
-      if (g) ids.add(g)
-    })
-    if (Array.isArray(form.groups)) {
-      form.groups.forEach((g) => {
-        if (g) ids.add(g)
-      })
-    }
-    availableGroups.value = Array.from(ids).sort()
+    apiGroups.value = (data?.data || []).filter(Boolean)
   } catch (e) {
-    availableGroups.value = []
+    apiGroups.value = []
   }
 }
 
