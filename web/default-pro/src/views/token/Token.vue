@@ -15,6 +15,7 @@
     <div class="tip-bar">
       <span class="tip-dot"></span>
       <span class="tip-text">{{ $t('token.tip') }}</span>
+      <span v-if="currentGroup" class="tip-group">{{ $t('token.currentGroup', { group: currentGroup }) }}</span>
     </div>
 
     <!-- Base URL 卡片（参考 tbus-web） -->
@@ -124,8 +125,10 @@
               <button
                 type="button"
                 class="models-link"
+                :class="{ 'models-none': availableModels.length === 0 }"
                 @click="openModelsModal(t)"
               >
+                <icon-close-circle v-if="availableModels.length === 0" :size="12" class="models-none-icon" />
                 <span>{{ formatModelCount(t.models) }}</span>
                 <icon-eye :size="12" class="models-link-icon" />
               </button>
@@ -387,7 +390,7 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
-import { IconPlus, IconCopy, IconBook, IconLock, IconEye } from '@arco-design/web-vue/es/icon'
+import { IconPlus, IconCopy, IconBook, IconLock, IconEye, IconCloseCircle } from '@arco-design/web-vue/es/icon'
 import api from '@/api'
 import { useStatusStore } from '@/stores/status'
 import { buildTokenExpiredTime, formatExpiredTime } from '@/utils/token'
@@ -418,6 +421,7 @@ const modalVisible = ref(false)
 const isEdit = ref(false)
 const editingId = ref(null)
 const availableModels = ref([])
+const currentGroup = ref('')
 
 const pageItems = computed(() => {
   const start = (activePage.value - 1) * pageSize.value
@@ -579,10 +583,12 @@ function handleKeyModalCopy() {
 
 function formatModelCount(val) {
   const arr = parseModelArray(val)
-  // '*' 或留空 = 全部模型，展示真实可用数量，绝不显示误导性的「1个 / 不限制」。
+  const n = availableModels.value?.length || 0
+  // 当前用户分组无任何可用模型 —— 明确告知用不了，绝不再显示「不限制」误导用户。
+  if (n === 0) return t('token.noModelsAvailable')
+  // '*' 或留空 = 全部模型，展示真实可用数量。
   if (arr.length === 0 || arr.includes('*')) {
-    const n = availableModels.value?.length || 0
-    return n > 0 ? t('token.allModelsCount', { n }) : t('token.notLimited')
+    return t('token.allModelsCount', { n })
   }
   return t('token.modelCountValue', { n: arr.length })
 }
@@ -661,6 +667,17 @@ async function fetchAvailableModels() {
     if (data.success) {
       availableModels.value = data.data || []
     }
+  } catch {
+    /* ignore */
+  }
+}
+
+// 拉取当前登录用户分组，便于诊断「渠道配了模型但令牌页看不到」——
+// 根因通常是渠道分组与用户分组不一致（available_models 只按用户分组取模型）。
+async function fetchCurrentGroup() {
+  try {
+    const { data } = await api.get('/api/user/self')
+    if (data.success) currentGroup.value = data.data?.group || ''
   } catch {
     /* ignore */
   }
@@ -804,6 +821,7 @@ onMounted(async () => {
   if (!statusStore.loaded) await statusStore.fetchStatus()
   fetchTokens()
   fetchAvailableModels()
+  fetchCurrentGroup()
 })
 </script>
 
@@ -866,6 +884,16 @@ onMounted(async () => {
 }
 .tip-text {
   line-height: 1.6;
+}
+.tip-group {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-text-3);
+  background: var(--color-fill-2);
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
 }
 
 /* ============ Base URL 卡片（参考 tbus-web） ============ */
@@ -1084,6 +1112,20 @@ onMounted(async () => {
 }
 .models-link:hover .models-link-icon {
   opacity: 1;
+}
+/* 无可用模型：红色警示，避免用户误以为「不限制」就能用 */
+.models-link.models-none {
+  color: #f53f3f;
+  border-color: rgba(245, 63, 63, 0.3);
+  background: rgba(245, 63, 63, 0.06);
+}
+.models-link.models-none:hover {
+  color: #f53f3f;
+  border-color: #f53f3f;
+  background: rgba(245, 63, 63, 0.1);
+}
+.models-none-icon {
+  flex-shrink: 0;
 }
 
 /* ============ 状态 chip ============ */

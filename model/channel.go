@@ -353,6 +353,11 @@ func UpdateChannelLastError(id int, errMsg string) {
 }
 
 func UpdateChannelStatusById(id int, status int) {
+	// 先取出渠道所属分组，状态变更后失效其 group_models 缓存，
+	// 否则启用/停用（含监控自动禁用）后令牌页可用模型会 stale 一个缓存周期。
+	var groups []string
+	DB.Model(&Channel{}).Where("id = ?", id).Distinct("`group`").Pluck("`group`", &groups)
+
 	err := UpdateAbilityStatus(id, status == ChannelStatusEnabled)
 	if err != nil {
 		logger.SysError("failed to update ability status: " + err.Error())
@@ -361,6 +366,11 @@ func UpdateChannelStatusById(id int, status int) {
 	if err != nil {
 		logger.SysError("failed to update channel status: " + err.Error())
 	}
+	var affected []string
+	for _, g := range groups {
+		affected = append(affected, strings.Split(g, ",")...)
+	}
+	InvalidateGroupModelsCache(affected...)
 }
 
 func UpdateChannelUsedQuota(id int, quota int64) {

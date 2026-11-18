@@ -25,7 +25,7 @@
           <template #icon><icon-message /></template>
           {{ $t('menu.chat') }}
         </a-menu-item>
-        <a-menu-item key="/models" role="menuitem" tabindex="0" :aria-current="route.path === '/models' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/models')">
+        <a-menu-item v-if="authStore.isAdmin" key="/models" role="menuitem" tabindex="0" :aria-current="route.path === '/models' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/models')">
           <template #icon><icon-apps /></template>
           {{ $t('menu.models') }}
         </a-menu-item>

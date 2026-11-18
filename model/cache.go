@@ -200,11 +200,21 @@ func CacheGetGroupModels(ctx context.Context, group string) ([]string, error) {
 	}
 	modelsStr, err := common.RedisGet(fmt.Sprintf("group_models:%s", group))
 	if err == nil {
+		// 空结果不写入缓存（见下方），但若历史数据已写入空串，读回时
+		// strings.Split("", ",") 会得到 [""]，这里显式过滤，避免前端出现空白模型项。
+		if modelsStr == "" {
+			return []string{}, nil
+		}
 		return strings.Split(modelsStr, ","), nil
 	}
 	models, err := GetGroupModels(ctx, group)
 	if err != nil {
 		return nil, err
+	}
+	// 空结果不缓存，否则 abilities/channels 后续补上数据后仍会读到旧空值，
+	// 最长 stale 一个 GroupModelsCacheSeconds 周期。
+	if len(models) == 0 {
+		return models, nil
 	}
 	err = common.RedisSet(fmt.Sprintf("group_models:%s", group), strings.Join(models, ","), time.Duration(GroupModelsCacheSeconds)*time.Second)
 	if err != nil {

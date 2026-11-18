@@ -150,6 +150,46 @@ func GetGroupModels(ctx context.Context, group string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// abilities 表可能为空或滞后（历史导入渠道、直接改库、集群事件未同步等），
+	// 此时回退到 channels 表——relay 选路真正使用的数据源，确保令牌页与 /v1/models
+	// 列出的模型与用户实际可调用的模型一致。仅当 abilities 完全查不到时才回退，
+	// 不影响已有正常 abilities 数据的部署。
+	if len(models) == 0 {
+		models = GetGroupModelsFromChannels(group)
+	}
 	sort.Strings(models)
 	return models, err
+}
+
+// GetGroupModelsFromChannels 从 channels 表推导某用户组可用的模型名，作为
+// abilities 表缺失时的兜底。语义严格对齐 InitChannelCache/relay 选路：
+// 只取启用渠道、按逗号拆分后精确匹配分组（ContainsGroup）、去重去空，
+// 通配渠道（`*`）不产生可枚举的具体模型名（与 InitChannelCache 一致）。
+func GetGroupModelsFromChannels(group string) []string {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return nil
+	}
+	var channels []*Channel
+	if err := DB.Where("status = ?", ChannelStatusEnabled).Find(&channels).Error; err != nil {
+		return nil
+	}
+	modelSet := make(map[string]struct{})
+	for _, channel := range channels {
+		if !channel.ContainsGroup(group) {
+			continue
+		}
+		for _, m := range uniqueTrimmedValues(strings.Split(channel.Models, ",")) {
+			if m == "*" {
+				continue
+			}
+			modelSet[m] = struct{}{}
+		}
+	}
+	models := make([]string, 0, len(modelSet))
+	for m := range modelSet {
+		models = append(models, m)
+	}
+	sort.Strings(models)
+	return models
 }
