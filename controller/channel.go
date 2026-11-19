@@ -30,11 +30,12 @@ type refreshChannelModelsRequest struct {
 }
 
 type validateChannelModelsRequest struct {
-	Id      int    `json:"id"`
-	Type    int    `json:"type"`
-	Key     string `json:"key"`
-	BaseURL string `json:"base_url"`
-	Models  string `json:"models"`
+	Id           int    `json:"id"`
+	Type         int    `json:"type"`
+	Key          string `json:"key"`
+	BaseURL      string `json:"base_url"`
+	Models       string `json:"models"`
+	ModelMapping string `json:"model_mapping"`
 }
 
 type upstreamModelsResponse struct {
@@ -399,6 +400,31 @@ func refreshOpenAICodexModels(channelID int, baseURL, key string) ([]string, str
 	return nil, "", fmt.Errorf("%s", codexModelListUnavailableMessage)
 }
 
+// modelMappingKeys returns the channel-side model names of a model mapping.
+// These are gateway-owned aliases that never appear in the upstream /models
+// catalogue, so a catalogue cross-check must treat them as valid.
+func modelMappingKeys(mapping map[string]string) []string {
+	keys := make([]string, 0, len(mapping))
+	for key := range mapping {
+		if key = strings.TrimSpace(key); key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+func parseModelMappingKeys(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "{}" {
+		return nil
+	}
+	mapping := make(map[string]string)
+	if err := json.Unmarshal([]byte(raw), &mapping); err != nil {
+		return nil
+	}
+	return modelMappingKeys(mapping)
+}
+
 func ValidateChannelModels(c *gin.Context) {
 	req := validateChannelModelsRequest{}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -406,6 +432,7 @@ func ValidateChannelModels(c *gin.Context) {
 		return
 	}
 
+	aliasModels := parseModelMappingKeys(req.ModelMapping)
 	if req.Id > 0 {
 		channel, err := model.GetChannelById(req.Id, true)
 		if err != nil {
@@ -421,6 +448,7 @@ func ValidateChannelModels(c *gin.Context) {
 		if req.BaseURL == "" {
 			req.BaseURL = channel.GetBaseURL()
 		}
+		aliasModels = append(aliasModels, modelMappingKeys(channel.GetModelMapping())...)
 	}
 
 	models := normalizeModelNames(strings.Split(req.Models, ","))
@@ -484,8 +512,12 @@ func ValidateChannelModels(c *gin.Context) {
 		return
 	}
 
-	listedSet := make(map[string]struct{}, len(listed))
+	listedSet := make(map[string]struct{}, len(listed)+len(aliasModels))
 	for _, name := range listed {
+		listedSet[name] = struct{}{}
+	}
+	// Model-mapping keys are gateway-side aliases, not upstream model IDs.
+	for _, name := range aliasModels {
 		listedSet[name] = struct{}{}
 	}
 	valid := make([]string, 0, len(models))

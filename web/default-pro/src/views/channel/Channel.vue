@@ -231,9 +231,11 @@
                 <a-button v-if="selectedModels.length" size="small" @click="clearSelectedModels">
                   {{ $t('channelPage.clearAllModels') }}
                 </a-button>
-                <a-button size="small" :loading="validatingModels" @click="validateChannelModels">
-                  {{ $t('channelPage.validateCatalog') }}
-                </a-button>
+                <a-tooltip :content="$t('channelPage.checkModelNamesHint')">
+                  <a-button size="small" :loading="validatingModels" @click="validateChannelModels">
+                    {{ $t('channelPage.checkModelNames') }}
+                  </a-button>
+                </a-tooltip>
               </a-space>
             </div>
             <a-input-search
@@ -873,26 +875,37 @@ async function validateChannelModels() {
       type: form.type,
       key: form.key,
       base_url: form.base_url,
+      model_mapping: form.model_mapping,
       models: models.join(','),
     })
-    if (!data.success) throw new Error(data.message || '模型校验失败')
+    if (!data.success) throw new Error(data.message || '模型名核对失败')
 
+    // 只读核对：上游 /models 清单天然不完整（模型重定向别名、原生端点模型、
+    // 账号/区域可见性都可能让模型缺席），因此绝不据此改写已填模型。
     const result = data.data || {}
-    if (result.verification_enabled) {
-      const validModels = result.valid_models || []
-      const invalidModels = result.invalid_models || []
-      modelOptions.value = mergeModelNames(validModels)
-      form.models = validModels.join(',')
-      if (invalidModels.length) {
-        Message.warning(`已移除 ${invalidModels.length} 个不可用模型：${invalidModels.join(', ')}`)
-      } else {
-        Message.success(`模型校验通过，共 ${validModels.length} 个`)
-      }
-    } else {
-      Message.warning(data.message || '上游未提供模型目录，当前模型仅作为候选项保留')
+    if (!result.verification_enabled) {
+      Message.warning({
+        content: '上游未提供模型清单，无法核对；已填模型全部保留。实际可用性请保存后点击「测试」。',
+        duration: 6000,
+      })
+      return
     }
+
+    const validModels = result.valid_models || []
+    const invalidModels = result.invalid_models || []
+    if (!invalidModels.length) {
+      Message.success(`已核对 ${validModels.length} 个模型名：均在上游清单中（仅代表清单存在，不代表可调用）。`)
+      return
+    }
+
+    const preview = invalidModels.slice(0, 5).join(', ')
+    const more = invalidModels.length > 5 ? ` 等 ${invalidModels.length} 个` : ''
+    Message.warning({
+      content: `${invalidModels.length} 个模型名未出现在上游清单中：${preview}${more}。常见原因是模型重定向别名、原生端点模型或上游清单不完整；已全部保留，未做修改。`,
+      duration: 8000,
+    })
   } catch (e) {
-    Message.error(e.response?.data?.message || e.message || '模型校验失败')
+    Message.error(e.response?.data?.message || e.message || '模型名核对失败')
   } finally {
     validatingModels.value = false
   }

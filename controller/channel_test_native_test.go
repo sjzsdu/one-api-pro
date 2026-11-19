@@ -98,7 +98,7 @@ func TestTestChannel_NativeMultimodalEmbedding(t *testing.T) {
 	if message != "embedding ok, dimensions: 3" {
 		t.Fatalf("message = %q, want embedding ok, dimensions: 3", message)
 	}
-	if gotPath != "/api/v1/services/embeddings/multimodal-embedding" {
+	if gotPath != "/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding" {
 		t.Fatalf("path = %q, want native multimodal path", gotPath)
 	}
 	if strings.Contains(gotPath, "embeddings/v1/embeddings") || strings.Contains(gotPath, "/v1/embeddings") {

@@ -10,9 +10,17 @@ import (
 )
 
 // MultimodalEmbeddingPath is the native (non-compatible-mode) DashScope
-// endpoint. qwen3-vl-embedding only exists here; the OpenAI-compatible
-// /v1/embeddings path returns 404 model_not_supported for it.
-const MultimodalEmbeddingPath = "/api/v1/services/embeddings/multimodal-embedding"
+// endpoint for qwen3-vl-embedding.
+//
+// The repeated segment is intentional — do NOT "simplify" it. Verified
+// 2026-11-19 against the live upstream with a real key:
+//
+//	/api/v1/services/embeddings/multimodal-embedding                        -> 400 "task can not be null" (task-submission endpoint)
+//	/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding -> 200 output.embeddings[].embedding
+//
+// The OpenAI-compatible /v1/embeddings path returns 404 model_not_supported
+// for this model.
+const MultimodalEmbeddingPath = "/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding"
 
 // GetMultimodalEmbeddingURL builds the native endpoint from the channel base
 // URL. Bailian channels are usually configured with a /compatible-mode suffix

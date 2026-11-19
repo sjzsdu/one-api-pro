@@ -11,7 +11,9 @@ import (
 )
 
 func TestGetMultimodalEmbeddingURL(t *testing.T) {
-	const want = "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding"
+	// The doubled segment is the real upstream endpoint; the single-segment
+	// path returns 400 "task can not be null" (verified 2026-11-19).
+	const want = "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding"
 	cases := []struct {
 		name string
 		base string
