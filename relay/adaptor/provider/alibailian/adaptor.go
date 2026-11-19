@@ -2,17 +2,38 @@ package alibailian
 
 import (
 	"fmt"
+	"strings"
 
+	oa "github.com/modelbus/one-api-pro/relay/adaptor/openai"
 	"github.com/modelbus/one-api-pro/relay/meta"
 	"github.com/modelbus/one-api-pro/relay/relaymode"
-	oa "github.com/modelbus/one-api-pro/relay/adaptor/openai"
 )
+
+// MultimodalEmbeddingPath is the native (non-compatible-mode) DashScope
+// endpoint. qwen3-vl-embedding only exists here; the OpenAI-compatible
+// /v1/embeddings path returns 404 model_not_supported for it.
+const MultimodalEmbeddingPath = "/api/v1/services/embeddings/multimodal-embedding"
+
+// GetMultimodalEmbeddingURL builds the native endpoint from the channel base
+// URL. Bailian channels are usually configured with a /compatible-mode suffix
+// so that /v1/chat/completions works; that suffix must be stripped here,
+// while a bare-domain base URL must produce the exact same endpoint.
+func (a *Adaptor) GetMultimodalEmbeddingURL(m *meta.Meta) (string, error) {
+	base := strings.TrimSuffix(m.BaseURL, "/")
+	base = strings.TrimSuffix(base, "/compatible-mode")
+	base = strings.TrimSuffix(base, "/")
+	if base == "" {
+		return "", fmt.Errorf("empty base url for alibailian multimodal embedding")
+	}
+	return base + MultimodalEmbeddingPath, nil
+}
 
 type Adaptor struct {
 	*oa.Adaptor
 }
 
 var ModelList = []string{
+	"qwen3-vl-embedding",
 	"qwen-image-2.0-pro-2026-06-22",
 	"test-sre-gpu-auto-handle",
 	"fun-asr-flash-2026-06-15",
@@ -246,4 +267,4 @@ func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
 	return "", fmt.Errorf("unsupported relay mode %d for ali bailian", meta.Mode)
 }
 
-func (a *Adaptor) GetModelList() []string  { return ModelList }
+func (a *Adaptor) GetModelList() []string { return ModelList }

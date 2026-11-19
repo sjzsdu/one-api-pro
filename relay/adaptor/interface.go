@@ -8,6 +8,18 @@ import (
 	"net/http"
 )
 
+// MultimodalEmbeddingURLer is an optional capability implemented only by
+// adaptors that can serve the native DashScope multimodal embedding endpoint.
+// Adaptors that do not implement it must not receive this relay mode: the
+// controller type-asserts before sending anything, so an unsupported channel
+// fails with 400 instead of silently hitting a wrong (compatible-mode) URL.
+//
+// MultimodalEmbeddingURLer 是可选能力接口，仅支持原生多模态向量端点的适配器实现。
+// 控制器通过类型断言识别；未实现的渠道直接返回 400，不会静默转发到错误 URL。
+type MultimodalEmbeddingURLer interface {
+	GetMultimodalEmbeddingURL(meta *meta.Meta) (string, error)
+}
+
 type Adaptor interface {
 	Init(meta *meta.Meta)
 	GetRequestURL(meta *meta.Meta) (string, error)

@@ -166,7 +166,7 @@
       v-model:visible="modalVisible"
       :title="modalTitle"
       :width="560"
-      @ok="handleSubmit"
+      :on-before-ok="handleSubmit"
       @cancel="closeModal"
       :ok-loading="submitting"
       :ok-text="$t('channelPage.save')"
@@ -174,7 +174,13 @@
     >
       <a-form ref="formRef" :model="form" layout="vertical" class="channel-form">
         <a-form-item field="type" :label="$t('channelPage.labelType')" required>
-          <a-select v-model="form.type" :placeholder="$t('channelPage.selectType')" @change="onTypeChange">
+          <a-select
+            v-model="form.type"
+            :placeholder="$t('channelPage.selectType')"
+            allow-search
+            :filter-option="filterTypeOption"
+            @change="onTypeChange"
+          >
             <a-option v-for="(name, key) in typeNameMap" :key="key" :value="Number(key)" :label="name" />
           </a-select>
           <span v-if="!isEdit && activePreset" class="form-hint form-hint-block auto-fill-hint">
@@ -675,7 +681,9 @@ function openCreateModal() {
   form.base_url = ''
   form.models = ''
   form.model_mapping = ''
-  form.groups = []
+  // 新建时默认选中 default 分组，避免用户漏填导致提交失败。
+  // 后端 GetGroups 保证至少有 default；availableGroups 也会合并表单已选值。
+  form.groups = ['default']
   form.key = ''
   form.is_fallback = false
   form.fallback_priority = 0
@@ -716,25 +724,36 @@ function closeModal() {
   formRef.value?.clearValidate()
 }
 
+// 类型下拉支持输入筛选：按显示名或类型数字 ID 匹配。
+function filterTypeOption(inputValue, option) {
+  const keyword = String(inputValue ?? '').trim().toLowerCase()
+  if (!keyword) return true
+  const label = String(option?.label ?? '').toLowerCase()
+  const value = String(option?.value ?? '')
+  return label.includes(keyword) || value.includes(keyword)
+}
+
+// 作为 a-modal 的 on-before-ok 使用：返回 false 阻止弹窗关闭。
+// 这样校验失败或提交失败时弹窗保持打开，用户可直接修正后重试。
 async function handleSubmit() {
   const errors = await formRef.value?.validate()
-  if (errors) return
+  if (errors) return false
   // 分组为空会让渠道不属于任何组：abilities 不会生成，用户侧永远看不到该渠道的模型。
   // 过去编辑时回填失效 + 允许清空，正是「改了分组不生效」的直接原因。
   if (!Array.isArray(form.groups) || form.groups.filter((g) => String(g || '').trim()).length === 0) {
     Message.error(t('channelPage.groupRequired'))
-    return
+    return false
   }
   if (form.model_mapping && form.model_mapping.trim()) {
     try {
       const parsed = JSON.parse(form.model_mapping)
       if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
         Message.error(t('channelPage.modelMappingMustBeObject'))
-        return
+        return false
       }
     } catch {
       Message.error(t('channelPage.modelMappingInvalidJson'))
-      return
+      return false
     }
   }
   submitting.value = true
@@ -759,13 +778,15 @@ async function handleSubmit() {
     }
     if (res.data.success) {
       Message.success(isEdit.value ? t('channelPage.channelUpdated') : t('channelPage.channelAdded'))
-      closeModal()
+      formRef.value?.clearValidate()
       fetchChannels()
-    } else {
-      Message.error(res.data.message || t('channelPage.opFailed'))
+      return true // 允许 on-before-ok 关闭弹窗
     }
+    Message.error(res.data.message || t('channelPage.opFailed'))
+    return false
   } catch (e) {
     Message.error(e.response?.data?.message || e.message || t('channelPage.opFailed'))
+    return false
   } finally {
     submitting.value = false
   }

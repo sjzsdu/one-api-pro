@@ -43,6 +43,11 @@ func relayHelper(c *gin.Context, relayMode int) *model.ErrorWithStatusCode {
 	switch relayMode {
 	case relaymode.ImagesGenerations:
 		err = controller.RelayImageHelper(c, relayMode)
+	case relaymode.MultimodalEmbeddings:
+		// Native DashScope multimodal embedding payload cannot be decoded into
+		// GeneralOpenAIRequest (input.contents / parameters would be lost), so it
+		// has its own helper with byte-exact request/response passthrough.
+		err = controller.RelayMultimodalEmbeddingHelper(c)
 	case relaymode.AudioSpeech:
 		fallthrough
 	case relaymode.AudioTranslation:
@@ -88,6 +93,13 @@ func Relay(c *gin.Context) {
 	cooldownSeconds := getChannelCooldownSeconds(channelId)
 	errCtx := interceptor.BuildErrorContext(c, bizErr, channelId, channelName, cooldownSeconds)
 	processedErr := errorHandlerChain.Process(errCtx)
+	// The native multimodal endpoint promises to preserve the upstream error
+	// text verbatim. The shared response mapper replaces 429 messages with a
+	// generic friendly string; keep the raw text for this mode only.
+	if relayMode == relaymode.MultimodalEmbeddings && processedErr != nil && bizErr != nil &&
+		processedErr.Error.Message != bizErr.Error.Message {
+		processedErr.Error.Message = bizErr.Error.Message
+	}
 	fallbackDecision := modelrouter.ClassifyFailure(toFallbackFailure(bizErr), requestFeaturesFromContext(c))
 
 	monitor.Emit(channelId, false)

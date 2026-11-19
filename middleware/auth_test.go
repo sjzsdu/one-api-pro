@@ -120,3 +120,41 @@ func TestTokenAuth_AutoBypassesTokenModelListWhenEnabled(t *testing.T) {
 		t.Fatalf("auto request status = %d, want %d; body=%s", w.Code, http.StatusNoContent, w.Body.String())
 	}
 }
+
+// TestTokenAuth_MultimodalEmbeddingModelChecks verifies the native endpoint
+// rejects a missing model with 400 and an unauthorized model with 403 before
+// channel selection, instead of falling through to "no available channel".
+func TestTokenAuth_MultimodalEmbeddingModelChecks(t *testing.T) {
+	_, tokenID := seedUser(t, "mm-user", model.RoleCommonUser, "mmtokenkeycccc", true)
+	models := "text-embedding-v3"
+	if err := model.DB.Model(&model.Token{}).Where("id = ?", tokenID).Update("models", models).Error; err != nil {
+		t.Fatalf("restrict token models: %v", err)
+	}
+
+	r := gin.New()
+	r.POST("/v1/multimodal/embeddings", TokenAuth(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	cases := []struct {
+		name string
+		body string
+		want int
+	}{
+		{"missing model", `{"input":{"contents":[{"text":"abc"}]}}`, http.StatusBadRequest},
+		{"unauthorized model", `{"model":"qwen3-vl-embedding"}`, http.StatusForbidden},
+		{"authorized model", `{"model":"text-embedding-v3"}`, http.StatusNoContent},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/multimodal/embeddings", strings.NewReader(tc.body))
+			req.Header.Set("Authorization", "Bearer sk-mmtokenkeycccc")
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != tc.want {
+				t.Fatalf("status = %d, want %d; body=%s", w.Code, tc.want, w.Body.String())
+			}
+		})
+	}
+}

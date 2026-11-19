@@ -4,7 +4,11 @@ import "strings"
 
 func GetByPath(path string) int {
 	relayMode := Unknown
-	if strings.HasPrefix(path, "/v1/chat/completions") {
+	// Check the native multimodal path before the generic "*embeddings" branches
+	// below; otherwise it would be misclassified as the OpenAI-compatible relay.
+	if strings.HasPrefix(path, "/v1/multimodal/embeddings") {
+		relayMode = MultimodalEmbeddings
+	} else if strings.HasPrefix(path, "/v1/chat/completions") {
 		relayMode = ChatCompletions
 	} else if strings.HasPrefix(path, "/v1/messages") {
 		relayMode = ChatCompletions

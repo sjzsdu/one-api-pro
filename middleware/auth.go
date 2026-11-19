@@ -125,6 +125,14 @@ func TokenAuth() func(c *gin.Context) {
 			abortWithMessage(c, http.StatusBadRequest, err.Error())
 			return
 		}
+		// getRequestModel returns ("", nil) when the body has no `model`. For the
+		// native multimodal endpoint that would fall through to Distribute and
+		// surface as "no available channel" instead of a clear 400. Reject it
+		// here, before channel selection. Other endpoints keep their behaviour.
+		if strings.HasPrefix(c.Request.URL.Path, "/v1/multimodal/embeddings") && requestModel == "" {
+			abortWithMessage(c, http.StatusBadRequest, "missing model in request body")
+			return
+		}
 		c.Set(ctxkey.RequestModel, requestModel)
 		if token.Models != nil && *token.Models != "" {
 			c.Set(ctxkey.AvailableModels, *token.Models)
@@ -167,6 +175,12 @@ func shouldCheckModel(c *gin.Context) bool {
 		return true
 	}
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/audio") {
+		return true
+	}
+	// Native multimodal embeddings carry the model in the JSON body just like
+	// chat/completions; malformed bodies must fail here with 400 instead of
+	// falling through to "no available channel".
+	if strings.HasPrefix(c.Request.URL.Path, "/v1/multimodal/embeddings") {
 		return true
 	}
 	return false
