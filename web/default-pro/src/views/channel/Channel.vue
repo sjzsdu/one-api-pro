@@ -174,9 +174,12 @@
     >
       <a-form ref="formRef" :model="form" layout="vertical" class="channel-form">
         <a-form-item field="type" :label="$t('channelPage.labelType')" required>
-          <a-select v-model="form.type" :placeholder="$t('channelPage.selectType')">
+          <a-select v-model="form.type" :placeholder="$t('channelPage.selectType')" @change="onTypeChange">
             <a-option v-for="(name, key) in typeNameMap" :key="key" :value="Number(key)" :label="name" />
           </a-select>
+          <span v-if="!isEdit && activePreset" class="form-hint form-hint-block auto-fill-hint">
+            {{ $t('channelPage.autoFilled') }}
+          </span>
         </a-form-item>
         <a-form-item field="name" :label="$t('channelPage.labelName')" required>
           <a-input v-model="form.name" :placeholder="$t('channelPage.channelName')" allow-clear />
@@ -195,12 +198,22 @@
         </a-form-item>
         <a-form-item field="base_url" label="Base URL">
           <a-input v-model="form.base_url" placeholder="https://api.openai.com" allow-clear />
+          <a-button
+            v-if="activePreset && activePreset.base_url"
+            type="text"
+            size="mini"
+            class="reset-default-btn"
+            @click="resetBaseURLToDefault"
+          >
+            {{ $t('channelPage.resetDefault') }}
+          </a-button>
         </a-form-item>
         <a-form-item field="models" :label="$t('channelPage.labelModels')">
           <div class="model-picker">
             <div class="model-picker-header">
               <span class="model-picker-title">
                 {{ visibleModelOptions.length ? t('channelPage.pickModelsTitle', { count: selectedModels.length }) : t('channelPage.noModelsLoaded') }}
+                <span v-if="defaultsAsOf" class="catalog-asof"> · {{ t('channelPage.mainstreamAsOf', { date: defaultsAsOf }) }}</span>
               </span>
               <a-space>
                 <a-button v-if="form.type === 20 || form.type === 52" size="small" :loading="refreshingModels" @click="refreshChannelModels">
@@ -396,6 +409,10 @@ const modelCatalog = ref({})
 const modelSearch = ref('')
 const manualModels = ref('')
 const availableModelOptions = ref([])
+// Provider defaults (base url + curated mainstream models), keyed by legacy type.
+const channelDefaults = ref({})
+const defaultsAsOf = ref('')
+const defaultsLoading = ref(false)
 // 来自 /api/group/ 的分组目录；实际可选项还要合并「已有渠道的分组」
 // 和「当前表单已选分组」，见下方 availableGroups computed。
 const apiGroups = ref([])
@@ -435,6 +452,9 @@ const availableGroups = computed(() => {
 const modalTitle = computed(() =>
   isEdit.value ? t('channelPage.editChannel') : t('channelPage.addChannel'),
 )
+
+// 当前选中类型的默认值预设（仅新建时用于自动填充提示与恢复默认按钮）。
+const activePreset = computed(() => channelDefaults.value?.[String(form.type)] || null)
 
 const selectedModels = computed({
   get: () => parseModelNames(form.models),
@@ -586,6 +606,67 @@ function onPageSizeChange(s) {
   activePage.value = 1
 }
 
+let defaultsPromise = null
+function fetchChannelDefaults() {
+  // 复用同一个请求，避免 onMounted 预加载与打开弹窗时的竞态。
+  if (defaultsPromise) return defaultsPromise
+  defaultsLoading.value = true
+  defaultsPromise = api.get('/api/channel/defaults')
+    .then(({ data }) => {
+      if (data?.success) {
+        channelDefaults.value = data.data?.presets || {}
+        defaultsAsOf.value = data.data?.as_of || ''
+      }
+    })
+    .catch(() => {
+      // 默认值是锦上添花，加载失败时表单仍可手动填写。
+      channelDefaults.value = {}
+      defaultsAsOf.value = ''
+    })
+    .finally(() => { defaultsLoading.value = false })
+  return defaultsPromise
+}
+
+// 把某个类型的默认值套用到表单：Base URL、渠道名、主流模型列表与元信息。
+// 只用于新建；编辑时保留用户已有配置，避免覆盖。
+function applyTypeDefaults(type, { overwriteName = true, overwriteModels = true } = {}) {
+  const preset = channelDefaults.value?.[String(type)]
+  if (!preset) return false
+  if (preset.base_url) form.base_url = preset.base_url
+  if (overwriteName && preset.name) form.name = preset.name
+
+  const models = Array.isArray(preset.models) ? preset.models : []
+  // 后端已按时效过滤掉过期模型，这里全部作为候选并默认选中。
+  const ids = models.map((m) => (typeof m === 'string' ? m : m?.id)).filter(Boolean)
+  if (overwriteModels && ids.length) {
+    modelOptions.value = [...ids]
+    selectedModels.value = [...ids]
+    const catalog = {}
+    models.forEach((m) => {
+      if (m && typeof m !== 'string' && m.id) catalog[m.id] = m
+    })
+    modelCatalog.value = catalog
+  }
+  return true
+}
+
+function onTypeChange(type) {
+  if (isEdit.value) return
+  const ok = applyTypeDefaults(type)
+  if (!ok) {
+    // 未收录的类型：清空上一次的默认值，避免遗留错误 Base URL。
+    form.base_url = ''
+    form.name = ''
+    modelOptions.value = []
+    selectedModels.value = []
+    modelCatalog.value = {}
+  }
+}
+
+function resetBaseURLToDefault() {
+  if (activePreset.value?.base_url) form.base_url = activePreset.value.base_url
+}
+
 function openCreateModal() {
   isEdit.value = false
   editingId.value = null
@@ -599,8 +680,12 @@ function openCreateModal() {
   form.is_fallback = false
   form.fallback_priority = 0
   modelOptions.value = []
+  modelCatalog.value = {}
   manualModels.value = ''
   modalVisible.value = true
+  // 打开弹窗即套用默认类型（OpenAI）的预设，并在后台拉取最新默认值。
+  if (!Object.keys(channelDefaults.value).length) fetchChannelDefaults().then(() => applyTypeDefaults(form.type))
+  else applyTypeDefaults(form.type)
 }
 
 function openEditModal(record) {
@@ -932,6 +1017,7 @@ onMounted(() => {
   fetchChannels()
   fetchAvailableModels()
   fetchGroups()
+  fetchChannelDefaults()
 })
 </script>
 
@@ -1291,6 +1377,20 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   width: 100%;
+}
+.auto-fill-hint {
+  margin-left: 0;
+  margin-top: 6px;
+  color: #00a870;
+  line-height: 1.5;
+}
+.catalog-asof {
+  color: var(--color-text-4);
+  font-size: 11px;
+}
+.reset-default-btn {
+  margin-left: 8px;
+  font-size: 12px;
 }
 
 /* ============ 降级渠道标识 ============ */

@@ -80,6 +80,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/", controller.GetAllChannels)
 			channelRoute.GET("/search", controller.SearchChannels)
 			channelRoute.GET("/models", controller.ListAllModels)
+			channelRoute.GET("/defaults", controller.ListChannelDefaults)
 			channelRoute.GET("/model_catalog", controller.ListConfiguredModels)
 			channelRoute.POST("/models/refresh", controller.RefreshChannelModels)
 			channelRoute.POST("/models/validate", controller.ValidateChannelModels)
