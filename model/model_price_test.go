@@ -20,13 +20,13 @@ func TestBillingTypeConstants(t *testing.T) {
 func TestModelPriceStruct(t *testing.T) {
 	Convey("ModelPrice struct", t, func() {
 		mp := ModelPrice{
-			ModelName:      "gpt-4o",
-			InputPrice:     2.5,
-			OutputPrice:    10.0,
-			CachedPrice:    1.25,
+			ModelName:       "gpt-4o",
+			InputPrice:      2.5,
+			OutputPrice:     10.0,
+			CachedPrice:     1.25,
 			PerRequestPrice: 0,
-			BillingType:    BillingTypeToken,
-			Enabled:        true,
+			BillingType:     BillingTypeToken,
+			Enabled:         true,
 		}
 		So(mp.ModelName, ShouldEqual, "gpt-4o")
 		So(mp.InputPrice, ShouldEqual, 2.5)
@@ -38,13 +38,13 @@ func TestModelPriceStruct(t *testing.T) {
 
 	Convey("ModelPrice per_request type", t, func() {
 		mp := ModelPrice{
-			ModelName:      "dall-e-3",
-			InputPrice:     0,
-			OutputPrice:    0,
-			CachedPrice:    0,
+			ModelName:       "dall-e-3",
+			InputPrice:      0,
+			OutputPrice:     0,
+			CachedPrice:     0,
 			PerRequestPrice: 0.04,
-			BillingType:    BillingTypePerRequest,
-			Enabled:        true,
+			BillingType:     BillingTypePerRequest,
+			Enabled:         true,
 		}
 		So(mp.BillingType, ShouldEqual, BillingTypePerRequest)
 		So(mp.PerRequestPrice, ShouldEqual, 0.04)
@@ -183,6 +183,43 @@ func TestFindModelPriceByPattern(t *testing.T) {
 			mp := FindModelPriceByPattern("gpt-4o-2024-08-06")
 			So(mp, ShouldNotBeNil)
 			So(mp.ModelName, ShouldEqual, "gpt-4o")
+		})
+
+		Convey("longest pattern wins deterministically", func() {
+			modelPriceCache.Lock()
+			modelPriceMap = map[string]*ModelPrice{
+				"gpt": {
+					ModelName:   "gpt",
+					InputPrice:  9,
+					BillingType: BillingTypeToken,
+				},
+				"gpt-4o": {
+					ModelName:   "gpt-4o",
+					InputPrice:  2.5,
+					BillingType: BillingTypeToken,
+				},
+			}
+			modelPriceCache.Unlock()
+			// "gpt-4o-mini" 同时命中 "gpt" 与 "gpt-4o"，必须稳定命中更具体的 gpt-4o
+			for i := 0; i < 50; i++ {
+				mp := FindModelPriceByPattern("gpt-4o-mini")
+				So(mp, ShouldNotBeNil)
+				So(mp.ModelName, ShouldEqual, "gpt-4o")
+			}
+		})
+
+		Convey("fallback name is never used as a substring pattern", func() {
+			modelPriceCache.Lock()
+			modelPriceMap = map[string]*ModelPrice{
+				FallbackModelName: {
+					ModelName:   FallbackModelName,
+					InputPrice:  1,
+					BillingType: BillingTypeToken,
+				},
+			}
+			modelPriceCache.Unlock()
+			// "*" 字面量不会出现在真实模型名里；即便请求名含 * 也不该被当作 pattern 命中
+			So(FindModelPriceByPattern("weird*model"), ShouldBeNil)
 		})
 
 		Convey("no match returns nil", func() {
@@ -340,6 +377,83 @@ func TestGroupPriceInsert_StripsClientId(t *testing.T) {
 			So(DB.First(&got, "group_name = ? AND model_name = ?", "vip", "gpt-4o").Error, ShouldBeNil)
 			So(got.Id, ShouldEqual, p.Id)
 			So(got.Discount, ShouldEqual, 0.5)
+		})
+	})
+}
+
+// TestFallbackPriceCRUD 覆盖兜底价的初始化、读取与保存：
+// 存量库补插、幂等不覆盖改价、读库可见 disabled、保存 upsert 并刷新缓存。
+//
+// 版本: v0.0.28
+// 日期: 2026-11-19
+func TestFallbackPriceCRUD(t *testing.T) {
+	Convey("fallback price CRUD", t, func() {
+		db := setupPriceTestDB(t)
+		oldDB := DB
+		DB = db
+		defer func() {
+			DB = oldDB
+			modelPriceCache.Lock()
+			modelPriceMap = nil
+			modelPriceCache.Unlock()
+		}()
+
+		Convey("InitFallbackPrice inserts and is idempotent", func() {
+			So(InitFallbackPrice(), ShouldBeNil)
+			p, err := GetFallbackPrice()
+			So(err, ShouldBeNil)
+			So(p.ModelName, ShouldEqual, FallbackModelName)
+			So(p.Enabled, ShouldBeTrue)
+			// 二次初始化不应报错，也不应产生重复行
+			So(InitFallbackPrice(), ShouldBeNil)
+			var count int64
+			DB.Model(&ModelPrice{}).Where("model_name = ?", FallbackModelName).Count(&count)
+			So(count, ShouldEqual, 1)
+		})
+
+		Convey("GetFallbackPrice returns default struct when row missing", func() {
+			p, err := GetFallbackPrice()
+			So(err, ShouldBeNil)
+			So(p, ShouldNotBeNil)
+			So(p.ModelName, ShouldEqual, FallbackModelName)
+			So(p.Id, ShouldEqual, 0)
+		})
+
+		Convey("SaveFallbackPrice inserts then updates, refresh cache", func() {
+			p, err := SaveFallbackPrice(2.5, 10, 1.25, 0.9, BillingTypeToken, true)
+			So(err, ShouldBeNil)
+			So(p.Id, ShouldBeGreaterThan, 0)
+			// SaveFallbackPrice 刷新了缓存，GetModelPrice 应能读到新价
+			cached, found := GetModelPrice(FallbackModelName)
+			So(found, ShouldBeTrue)
+			So(cached.InputPrice, ShouldEqual, 2.5)
+			So(cached.OutputPrice, ShouldEqual, 10)
+
+			// 再次保存走更新分支，且可禁用
+			p2, err := SaveFallbackPrice(3, 12, 0, 0, BillingTypeToken, false)
+			So(err, ShouldBeNil)
+			So(p2.Id, ShouldEqual, p.Id)
+			reloaded, err := GetFallbackPrice()
+			So(err, ShouldBeNil)
+			So(reloaded.InputPrice, ShouldEqual, 3)
+			So(reloaded.Enabled, ShouldBeFalse)
+			// 禁用后不进缓存（InitModelPriceCache 只加载 enabled=true）
+			_, found2 := GetModelPrice(FallbackModelName)
+			So(found2, ShouldBeFalse)
+			// 只有一行，没有重复
+			var count int64
+			DB.Model(&ModelPrice{}).Where("model_name = ?", FallbackModelName).Count(&count)
+			So(count, ShouldEqual, 1)
+		})
+
+		Convey("InitFallbackPrice never overwrites admin edits", func() {
+			_, err := SaveFallbackPrice(7, 8, 0, 0, BillingTypeToken, true)
+			So(err, ShouldBeNil)
+			So(InitFallbackPrice(), ShouldBeNil)
+			p, err := GetFallbackPrice()
+			So(err, ShouldBeNil)
+			So(p.InputPrice, ShouldEqual, 7)
+			So(p.OutputPrice, ShouldEqual, 8)
 		})
 	})
 }

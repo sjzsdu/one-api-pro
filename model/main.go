@@ -194,6 +194,9 @@ func InitDB() {
 	if err = InitDefaultPrices(); err != nil {
 		appLogger.SysError("failed to initialize default prices: " + err.Error())
 	}
+	if err = InitFallbackPrice(); err != nil {
+		appLogger.SysError("failed to initialize fallback price: " + err.Error())
+	}
 
 	// Parallel cache initialization for faster startup
 	var wg sync.WaitGroup

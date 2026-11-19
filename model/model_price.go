@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,20 +11,21 @@ import (
 	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/helper"
 	"github.com/modelbus/one-api-pro/common/logger"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 type ModelPrice struct {
-	Id             uint    `gorm:"primaryKey;autoIncrement" json:"id"`
-	ModelName      string  `gorm:"type:varchar(100);uniqueIndex;not null" json:"model_name"`
+	Id              uint    `gorm:"primaryKey;autoIncrement" json:"id"`
+	ModelName       string  `gorm:"type:varchar(100);uniqueIndex;not null" json:"model_name"`
 	InputPrice      float64 `gorm:"type:decimal(16,6);default:0;not null" json:"input_price"`
 	OutputPrice     float64 `gorm:"type:decimal(16,6);default:0;not null" json:"output_price"`
 	CachedPrice     float64 `gorm:"type:decimal(16,6);default:0;not null" json:"cached_price"`
 	PerRequestPrice float64 `gorm:"type:decimal(16,6);default:0;not null" json:"per_request_price"`
-	BillingType    string  `gorm:"type:varchar(20);default:'token';not null" json:"billing_type"`
-	Enabled        bool    `gorm:"default:true;not null" json:"enabled"`
-	CreatedAt      int64   `json:"created_at" gorm:"bigint;default:0"`
-	UpdatedAt      int64   `json:"updated_at" gorm:"bigint;default:0"`
+	BillingType     string  `gorm:"type:varchar(20);default:'token';not null" json:"billing_type"`
+	Enabled         bool    `gorm:"default:true;not null" json:"enabled"`
+	CreatedAt       int64   `json:"created_at" gorm:"bigint;default:0"`
+	UpdatedAt       int64   `json:"updated_at" gorm:"bigint;default:0"`
 }
 
 type GroupPrice struct {
@@ -41,6 +43,27 @@ var groupPriceCache sync.RWMutex
 var groupPriceMap map[string]map[string]float64
 
 var ModelPriceCacheSeconds = 300
+
+// FallbackModelName 是「兜底价」在 model_price 表中的保留模型名。
+// 任何在表中找不到精确/通配匹配的模型，最终都按这条记录的单价计费，
+// 避免新增模型因未登记价格而直接 422 拒绝。管理员可在「模型定价」页编辑它。
+// 版本: v0.0.28
+// 日期: 2026-11-19
+const FallbackModelName = "*"
+
+// fallbackPrice 是兜底价的初始值。本系统暂不对外开放，价格合理性不作要求，
+// 故默认 0 价——新增模型无需任何配置即可直接调用。管理员可在「定价 → 兜底价格」
+// 里随时改成非零单价。该值仅在首次插入时生效，之后的修改不会被启动流程覆盖。
+// 版本: v0.0.28
+// 日期: 2026-11-19
+var fallbackPrice = ModelPrice{
+	ModelName:   FallbackModelName,
+	InputPrice:  0,
+	OutputPrice: 0,
+	CachedPrice: 0,
+	BillingType: BillingTypeToken,
+	Enabled:     true,
+}
 
 func InitModelPriceCache() {
 	modelPriceCache.Lock()
@@ -270,6 +293,97 @@ func InitDefaultPrices() error {
 	return nil
 }
 
+// InitFallbackPrice 幂等确保兜底价记录存在。
+// 与 InitDefaultPrices 不同，本函数没有「表非空就跳过」的保护——存量库升级后
+// 必须补插这条记录，否则老用户依然会遇到 model price not found。
+// 使用 OnConflict DoNothing：管理员在后台改过的单价不会被重启覆盖。
+// 版本: v0.0.28
+// 日期: 2026-11-19
+func InitFallbackPrice() error {
+	var count int64
+	if err := DB.Model(&ModelPrice{}).Where("model_name = ?", FallbackModelName).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	p := fallbackPrice
+	p.CreatedAt = helper.GetTimestamp()
+	p.UpdatedAt = helper.GetTimestamp()
+	if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&p).Error; err != nil {
+		return err
+	}
+	logger.SysLog("initialized fallback model price (*)")
+	return nil
+}
+
+// GetFallbackPrice 读取兜底价配置（供后台「定价 → 兜底价格」页展示）。
+// 直接读库而非缓存，这样即使兜底价被禁用（enabled=false，不会进缓存）也能读到当前配置。
+// 若库中无记录（极端情况：被删且尚未重启），返回一个内存中的默认结构（Id=0），
+// 前台仍能展示并保存，由 SaveFallbackPrice 负责落库。
+// 版本: v0.0.28
+// 日期: 2026-11-19
+func GetFallbackPrice() (*ModelPrice, error) {
+	var p ModelPrice
+	err := DB.Where("model_name = ?", FallbackModelName).First(&p).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fp := fallbackPrice
+			return &fp, nil
+		}
+		return nil, err
+	}
+	return &p, nil
+}
+
+// SaveFallbackPrice 保存兜底价配置：存在则更新全部价格字段与开关，不存在则插入。
+// 兜底价的 model_name 恒为保留名 *，忽略调用方传入的任何 model_name。
+// 保存后刷新内存缓存，使新价格立即在计费链路生效（无需等 300s 同步周期）。
+// 版本: v0.0.28
+// 日期: 2026-11-19
+func SaveFallbackPrice(inputPrice, outputPrice, cachedPrice, perRequestPrice float64, billingType string, enabled bool) (*ModelPrice, error) {
+	if billingType == "" {
+		billingType = BillingTypeToken
+	}
+	now := helper.GetTimestamp()
+	var existing ModelPrice
+	err := DB.Where("model_name = ?", FallbackModelName).First(&existing).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		p := ModelPrice{
+			ModelName:       FallbackModelName,
+			InputPrice:      inputPrice,
+			OutputPrice:     outputPrice,
+			CachedPrice:     cachedPrice,
+			PerRequestPrice: perRequestPrice,
+			BillingType:     billingType,
+			Enabled:         enabled,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}
+		if err := DB.Create(&p).Error; err != nil {
+			return nil, err
+		}
+		InitModelPriceCache()
+		return &p, nil
+	}
+	existing.InputPrice = inputPrice
+	existing.OutputPrice = outputPrice
+	existing.CachedPrice = cachedPrice
+	existing.PerRequestPrice = perRequestPrice
+	existing.BillingType = billingType
+	existing.Enabled = enabled
+	existing.UpdatedAt = now
+	if err := DB.Model(&existing).Select("input_price", "output_price", "cached_price",
+		"per_request_price", "billing_type", "enabled", "updated_at").Updates(&existing).Error; err != nil {
+		return nil, err
+	}
+	InitModelPriceCache()
+	return &existing, nil
+}
+
 func ModelPrice2JSONString() string {
 	modelPriceCache.RLock()
 	defer modelPriceCache.RUnlock()
@@ -372,6 +486,15 @@ func cacheGetGroupPriceDB(groupName string, modelName string) (*GroupPrice, erro
 	return &p, err
 }
 
+// FindModelPriceByPattern 用「价格表里的 model_name 作为 pattern」去匹配请求模型名，
+// 命中最具体的那个 pattern（最长优先）。这是为 gpt-4o-2024-08-06 这类带版本/日期
+// 后缀的模型准备的：只要表里存在 gpt-4o，就能覆盖所有以它为子串的变体。
+//
+// 注意：Go map 遍历顺序随机，旧实现「命中第一个」会让同时匹配多个 pattern 时
+// 结果不确定（例如表里同时有 gpt-4o 与 gpt-4o-mini，请求 gpt-4o-mini-2024 时
+// 可能错误命中 gpt-4o）。改为最长 pattern 优先，并在同长度时按字典序取，
+// 保证确定性。兜底价 FallbackModelName 是字面 "*"，不会作为子串模式命中任何
+// 模型名，这里仍显式跳过以防万一。
 func FindModelPriceByPattern(modelName string) *ModelPrice {
 	modelPriceCache.RLock()
 	defer modelPriceCache.RUnlock()
@@ -381,12 +504,22 @@ func FindModelPriceByPattern(modelName string) *ModelPrice {
 	if p, ok := modelPriceMap[modelName]; ok {
 		return p
 	}
+	var bestPattern string
+	var best *ModelPrice
 	for pattern, p := range modelPriceMap {
-		if strings.Contains(modelName, pattern) {
-			return p
+		if pattern == "" || pattern == FallbackModelName {
+			continue
+		}
+		if !strings.Contains(modelName, pattern) {
+			continue
+		}
+		if best == nil || len(pattern) > len(bestPattern) ||
+			(len(pattern) == len(bestPattern) && pattern < bestPattern) {
+			bestPattern = pattern
+			best = p
 		}
 	}
-	return nil
+	return best
 }
 
 func GetModelPriceCacheForTest() *sync.RWMutex {

@@ -80,6 +80,82 @@ func TestGetModelPriceWithSuffixHandling(t *testing.T) {
 	})
 }
 
+func TestGetModelPriceFallback(t *testing.T) {
+	Convey("fallback price (*)", t, func() {
+		cache := model.GetModelPriceCacheForTest()
+		cache.Lock()
+		model.SetModelPriceMapForTest(map[string]*model.ModelPrice{
+			model.FallbackModelName: {
+				ModelName:   model.FallbackModelName,
+				InputPrice:  1.0,
+				OutputPrice: 5.0,
+				BillingType: model.BillingTypeToken,
+				Enabled:     true,
+			},
+			"gpt-4o": {
+				ModelName:   "gpt-4o",
+				InputPrice:  2.5,
+				OutputPrice: 10.0,
+				BillingType: model.BillingTypeToken,
+				Enabled:     true,
+			},
+		})
+		cache.Unlock()
+		defer func() {
+			cache.Lock()
+			model.SetModelPriceMapForTest(nil)
+			cache.Unlock()
+		}()
+
+		Convey("unknown model uses fallback price", func() {
+			result, err := GetModelPrice("cohere/north-mini-code:free")
+			So(err, ShouldBeNil)
+			So(result, ShouldNotBeNil)
+			So(result.InputPrice, ShouldEqual, 1.0)
+			So(result.OutputPrice, ShouldEqual, 5.0)
+			So(result.Found, ShouldBeTrue)
+			So(result.IsFallback, ShouldBeTrue)
+		})
+
+		Convey("fallback applies to both model name and origin fallback", func() {
+			result, err := GetModelPrice("brand-new-model", "another-unknown")
+			So(err, ShouldBeNil)
+			So(result.IsFallback, ShouldBeTrue)
+			So(result.InputPrice, ShouldEqual, 1.0)
+		})
+
+		Convey("explicit price wins over fallback", func() {
+			result, err := GetModelPrice("gpt-4o")
+			So(err, ShouldBeNil)
+			So(result.InputPrice, ShouldEqual, 2.5)
+			So(result.IsFallback, ShouldBeFalse)
+		})
+
+		Convey("pattern match wins over fallback", func() {
+			result, err := GetModelPrice("gpt-4o-2024-08-06")
+			So(err, ShouldBeNil)
+			So(result.InputPrice, ShouldEqual, 2.5)
+			So(result.IsFallback, ShouldBeFalse)
+		})
+	})
+
+	Convey("no fallback price configured still errors", t, func() {
+		cache := model.GetModelPriceCacheForTest()
+		cache.Lock()
+		model.SetModelPriceMapForTest(map[string]*model.ModelPrice{})
+		cache.Unlock()
+		defer func() {
+			cache.Lock()
+			model.SetModelPriceMapForTest(nil)
+			cache.Unlock()
+		}()
+
+		result, err := GetModelPrice("totally-unknown")
+		So(err, ShouldNotBeNil)
+		So(result, ShouldBeNil)
+	})
+}
+
 func TestModelPriceExists(t *testing.T) {
 	Convey("ModelPriceExists", t, func() {
 		cache := model.GetModelPriceCacheForTest()

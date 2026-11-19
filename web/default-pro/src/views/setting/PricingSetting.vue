@@ -28,6 +28,46 @@
         </a-table>
       </a-tab-pane>
 
+      <a-tab-pane key="fallback" :title="$t('settingPage.pricing.fallbackTab')">
+        <div class="section-header">
+          <h3>{{ $t('settingPage.pricing.fallbackTab') }}</h3>
+        </div>
+        <a-alert class="fallback-tip" type="info" size="small">
+          <template #message>{{ $t('settingPage.pricing.fallbackTip') }}</template>
+        </a-alert>
+        <a-form :model="fbForm" layout="vertical" class="fallback-form">
+          <a-form-item :label="$t('settingPage.pricing.fallbackEnabled')">
+            <a-switch v-model="fbForm.enabled" />
+            <span class="fallback-hint">{{ fbForm.enabled ? $t('settingPage.pricing.fallbackOnHint') : $t('settingPage.pricing.fallbackOffHint') }}</span>
+          </a-form-item>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item :label="$t('settingPage.pricing.inputPrice')"><a-input-number v-model="fbForm.input_price" :style="{ width: '100%' }" :precision="6" :min="0" /></a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item :label="$t('settingPage.pricing.outputPrice')"><a-input-number v-model="fbForm.output_price" :style="{ width: '100%' }" :precision="6" :min="0" /></a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item :label="$t('settingPage.pricing.cachedPrice')"><a-input-number v-model="fbForm.cached_price" :style="{ width: '100%' }" :precision="6" :min="0" /></a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item :label="$t('settingPage.pricing.perRequestPrice')"><a-input-number v-model="fbForm.per_request_price" :style="{ width: '100%' }" :precision="6" :min="0" /></a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item :label="$t('settingPage.pricing.billingType')">
+            <a-select v-model="fbForm.billing_type">
+              <a-option value="token">{{ $t('settingPage.pricing.billingByToken') }}</a-option>
+              <a-option value="per_request">{{ $t('settingPage.pricing.billingByRequest') }}</a-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item>
+            <a-button type="primary" :loading="fbSaving" @click="handleSaveFallback">{{ $t('settingPage.pricing.saveFallback') }}</a-button>
+          </a-form-item>
+        </a-form>
+      </a-tab-pane>
+
       <a-tab-pane key="group" :title="$t('settingPage.pricing.groupTab')">
         <div class="section-header">
           <h3>{{ $t('settingPage.pricing.groupTab') }}</h3>
@@ -79,6 +119,9 @@
             <a-option value="token">{{ $t('settingPage.pricing.billingByToken') }}</a-option>
             <a-option value="per_request">{{ $t('settingPage.pricing.billingByRequest') }}</a-option>
           </a-select>
+        </a-form-item>
+        <a-form-item :label="$t('settingPage.pricing.enabled')">
+          <a-switch v-model="mpForm.enabled" />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -143,23 +186,42 @@ const gpColumns = computed(() => [
 const gpScroll = { x: 650 }
 
 const mpVisible = ref(false), mpEditing = ref(false), mpSaving = ref(false)
-const mpForm = reactive({ model_name: '', input_price: 0, output_price: 0, cached_price: 0, per_request_price: 0, billing_type: 'token' })
+const mpForm = reactive({ model_name: '', input_price: 0, output_price: 0, cached_price: 0, per_request_price: 0, billing_type: 'token', enabled: true })
 
 const gpVisible = ref(false), gpEditing = ref(false), gpSaving = ref(false)
 const gpForm = reactive({ group_name: '', model_name: '', discount: 1 })
 
+const fbSaving = ref(false)
+const fbForm = reactive({ input_price: 0, output_price: 0, cached_price: 0, per_request_price: 0, billing_type: 'token', enabled: true })
+
 async function loadData() {
   loading.value = true
   try {
-    const [mp, gp] = await Promise.all([api.get('/api/model_price/'), api.get('/api/group_price/')])
-    modelPrices.value = Array.isArray(mp.data.data) ? mp.data.data : mp.data.data?.items || []
+    const [mp, gp, fb] = await Promise.all([
+      api.get('/api/model_price/'),
+      api.get('/api/group_price/'),
+      api.get('/api/model_price/fallback'),
+    ])
+    const mpList = Array.isArray(mp.data.data) ? mp.data.data : mp.data.data?.items || []
+    // 兜底价（*）在独立的「兜底价格」tab 里配置，不出现在普通模型定价列表。
+    modelPrices.value = mpList.filter((r) => r.model_name !== '*')
     groupPrices.value = Array.isArray(gp.data.data) ? gp.data.data : gp.data.data?.items || []
+    if (fb.data.success && fb.data.data) Object.assign(fbForm, fb.data.data)
   } catch (e) { /* ignore */ } finally { loading.value = false }
+}
+
+async function handleSaveFallback() {
+  fbSaving.value = true
+  try {
+    const { data } = await api.put('/api/model_price/fallback', { ...fbForm })
+    if (data.success) Message.success(t('settingPage.pricing.fallbackSaved'))
+    else Message.error(data.message)
+  } catch (e) { Message.error(t('settingPage.pricing.opFailed')) } finally { fbSaving.value = false }
 }
 
 function openModelPrice(r) {
   mpEditing.value = !!r
-  Object.assign(mpForm, r ? { ...r } : { id: 0, model_name: '', input_price: 0, output_price: 0, cached_price: 0, per_request_price: 0, billing_type: 'token' })
+  Object.assign(mpForm, r ? { ...r } : { id: 0, model_name: '', input_price: 0, output_price: 0, cached_price: 0, per_request_price: 0, billing_type: 'token', enabled: true })
   mpVisible.value = true
 }
 async function handleSaveMP() {
@@ -192,6 +254,9 @@ onMounted(() => { loadData() })
 
 <style scoped>
 .setting-container { width: 100%; padding: 4px 0; }
+.fallback-tip { margin-bottom: 16px; }
+.fallback-form { max-width: 560px; }
+.fallback-hint { margin-left: 12px; color: var(--color-text-3); font-size: 13px; }
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .section-header h3 { font-size: 16px; font-weight: 600; color: var(--color-text-1); margin: 0; padding: 0; }
 </style>

@@ -142,6 +142,9 @@ func SetApiRouter(router *gin.Engine) {
 			modelPriceRoute.POST("/", controller.AddModelPrice)
 			modelPriceRoute.PUT("/", controller.UpdateModelPrice)
 			modelPriceRoute.DELETE("/:id", controller.DeleteModelPrice)
+			// 兜底价（总兜底）：未登记定价的模型按此计费，独立于普通模型定价列表。
+			modelPriceRoute.GET("/fallback", controller.GetFallbackPrice)
+			modelPriceRoute.PUT("/fallback", controller.UpdateFallbackPrice)
 		}
 		// 模型下拉候选（前端渠道编辑弹窗用）：AdminAuth 即可访问，只返 model_name。
 		// 挂在 apiRouter 上而非 modelPriceRoute 内，避免被 RootAuth 拦截。

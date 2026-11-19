@@ -9,8 +9,9 @@ import (
 )
 
 // ⚠️ Deprecated: 仅 RootAuth 可见，返回 model_price 全量字段（含 enabled=false 与计费详情）。
-//   前端下拉等只读场景请改用 ListModelPriceOptions（路径 /api/model_price/options，AdminAuth）。
-//   本接口仅保留给 root 角色查看完整模型定价。
+//
+//	前端下拉等只读场景请改用 ListModelPriceOptions（路径 /api/model_price/options，AdminAuth）。
+//	本接口仅保留给 root 角色查看完整模型定价。
 //
 // Deprecated: prefer ListModelPriceOptions for read-only model lists used in UI dropdowns.
 func GetAllModelPrices(c *gin.Context) {
@@ -48,7 +49,9 @@ func ListModelPriceOptions(c *gin.Context) {
 	}
 	names := make([]string, 0, len(prices))
 	for _, p := range prices {
-		if p.ModelName != "" {
+		// 过滤兜底价保留名 "*"：它是计费兜底规则，不是可被渠道选中的真实模型，
+		// 出现在下拉里会让用户误以为存在一个叫 "*" 的模型。
+		if p.ModelName != "" && p.ModelName != model.FallbackModelName {
 			names = append(names, p.ModelName)
 		}
 	}
@@ -248,5 +251,61 @@ func DeleteGroupPrice(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
+	})
+}
+
+// GetFallbackPrice 返回兜底价配置，供后台「定价 → 兜底价格」页展示。
+// 始终返回 200 + data，库中无记录时返回内存默认值（Id=0）。
+// 版本: v0.0.28
+// 日期: 2026-11-19
+func GetFallbackPrice(c *gin.Context) {
+	price, err := model.GetFallbackPrice()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    price,
+	})
+}
+
+// UpdateFallbackPrice 保存兜底价配置（新增或更新），model_name 恒为保留名 *。
+// 保存后刷新价格缓存，新单价立即在计费链路生效。
+// 版本: v0.0.28
+// 日期: 2026-11-19
+func UpdateFallbackPrice(c *gin.Context) {
+	var req struct {
+		InputPrice      float64 `json:"input_price"`
+		OutputPrice     float64 `json:"output_price"`
+		CachedPrice     float64 `json:"cached_price"`
+		PerRequestPrice float64 `json:"per_request_price"`
+		BillingType     string  `json:"billing_type"`
+		Enabled         bool    `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "无效的请求参数",
+		})
+		return
+	}
+	price, err := model.SaveFallbackPrice(req.InputPrice, req.OutputPrice, req.CachedPrice,
+		req.PerRequestPrice, req.BillingType, req.Enabled)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    price,
 	})
 }

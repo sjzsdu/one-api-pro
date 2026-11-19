@@ -26,6 +26,7 @@ import (
 	"github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/monitor"
 	"github.com/modelbus/one-api-pro/relay"
+	relayadaptor "github.com/modelbus/one-api-pro/relay/adaptor"
 	"github.com/modelbus/one-api-pro/relay/adaptor/openai"
 	"github.com/modelbus/one-api-pro/relay/handler"
 	"github.com/modelbus/one-api-pro/relay/meta"
@@ -56,6 +57,90 @@ func isEmbeddingTestModel(modelName string) bool {
 		strings.Contains(modelName, "/bge") ||
 		strings.Contains(modelName, "gte-") ||
 		strings.Contains(modelName, "bce-embedding")
+}
+
+// isNativeMultimodalTestModel reports whether a model is served only by the
+// native (non-OpenAI-compatible) multimodal embedding endpoint. Naming it
+// explicitly avoids routing every *-embedding model to the native path:
+// text-embedding-v3 and friends must keep using /v1/embeddings.
+func isNativeMultimodalTestModel(modelName string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(modelName)), "qwen3-vl-embedding")
+}
+
+// parseNativeMultimodalTestResponse parses a DashScope native multimodal
+// embedding response and mirrors parseEmbeddingTestResponse's success signal.
+func parseNativeMultimodalTestResponse(resp []byte) (string, error) {
+	var payload struct {
+		Output struct {
+			Embeddings []struct {
+				Embedding []float64 `json:"embedding"`
+			} `json:"embeddings"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(resp, &payload); err != nil {
+		return "", err
+	}
+	if len(payload.Output.Embeddings) == 0 || len(payload.Output.Embeddings[0].Embedding) == 0 {
+		return "", errors.New("multimodal embedding response has no vector data")
+	}
+	return fmt.Sprintf("embedding ok, dimensions: %d", len(payload.Output.Embeddings[0].Embedding)), nil
+}
+
+// testNativeMultimodalEmbedding sends a minimal native request to an
+// adaptor that implements MultimodalEmbeddingURLer (currently alibailian).
+// It deliberately mirrors RelayMultimodalEmbeddingHelper's URL/header choices:
+// the compatible-mode /v1/embeddings path would 404 for these models.
+func testNativeMultimodalEmbedding(c *gin.Context, adaptor relayadaptor.Adaptor, meta *meta.Meta, modelName string) (string, error, *relaymodel.Error) {
+	urler, ok := adaptor.(relayadaptor.MultimodalEmbeddingURLer)
+	if !ok {
+		return "", fmt.Errorf("channel does not support native multimodal embeddings (model %s)", modelName), nil
+	}
+	fullURL, err := urler.GetMultimodalEmbeddingURL(meta)
+	if err != nil {
+		return "", err, nil
+	}
+	// Minimal native body: one text content. Dimension is omitted so the upstream
+	// default applies; the test only asserts the endpoint is reachable.
+	body, err := json.Marshal(map[string]any{
+		"model": modelName,
+		"input": map[string]any{
+			"contents": []map[string]string{{"text": config.TestPrompt}},
+		},
+	})
+	if err != nil {
+		return "", err, nil
+	}
+	outReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, fullURL, bytes.NewReader(body))
+	if err != nil {
+		return "", err, nil
+	}
+	outReq.Header.Set("Content-Type", "application/json")
+	outReq.Header.Set("Accept", "application/json")
+	outReq.Header.Set("Authorization", "Bearer "+meta.APIKey)
+	// relayadaptor.DoRequest closes c.Request.Body on success; the test context
+	// created in testChannel has a nil body, so give it an inert one.
+	if c.Request.Body == nil {
+		c.Request.Body = io.NopCloser(bytes.NewReader(nil))
+	}
+	resp, err := relayadaptor.DoRequest(c, outReq)
+	if err != nil {
+		return "", err, nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		bizErr := controller.RelayErrorHandler(resp)
+		msg := bizErr.Error.Message
+		if msg != "" {
+			msg = ", error message: " + msg
+		}
+		return "", fmt.Errorf("http status code: %d%s", resp.StatusCode, msg), &bizErr.Error
+	}
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err, nil
+	}
+	message, err := parseNativeMultimodalTestResponse(respBody)
+	return message, err, nil
 }
 
 func parseTestResponse(resp string) (*openai.TextResponse, string, error) {
@@ -127,6 +212,19 @@ func testChannel(ctx context.Context, channel *model.Channel, request *relaymode
 	adaptor.Init(meta)
 	meta.OriginModelName, meta.ActualModelName = request.Model, modelName
 	request.Model = modelName
+	// Native multimodal embeddings (e.g. qwen3-vl-embedding) only exist on a
+	// non-compatible-mode DashScope endpoint. Route the test the same way the
+	// production relay does; otherwise /v1/embeddings returns 404 and a healthy
+	// channel/model is reported as broken.
+	if isNativeMultimodalTestModel(modelName) {
+		if _, ok := adaptor.(relayadaptor.MultimodalEmbeddingURLer); ok {
+			message, nativeErr, nativeOpenAIErr := testNativeMultimodalEmbedding(c, adaptor, meta, modelName)
+			if nativeErr != nil || nativeOpenAIErr != nil {
+				return message, nativeErr, nativeOpenAIErr
+			}
+			return message, nil, nil
+		}
+	}
 	convertedRequest, err := adaptor.ConvertRequest(c, relayMode, request)
 	if err != nil {
 		return "", err, nil

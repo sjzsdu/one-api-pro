@@ -20,6 +20,9 @@ type PriceResult struct {
 	BillingType     string
 	Discount        float64
 	Found           bool
+	// IsFallback 表示价格来自兜底价（保留模型名 *），而非该模型的精确/通配定价。
+	// 用于日志与可观测性：提示管理员该模型尚未单独登记定价。
+	IsFallback bool
 }
 
 func GetModelPrice(modelName string, fallbackModelNames ...string) (*PriceResult, error) {
@@ -53,9 +56,21 @@ func GetModelPrice(modelName string, fallbackModelNames ...string) (*PriceResult
 			}
 		}
 	}
+	isFallback := false
+	if mp == nil {
+		// 最后一道兜底：任何未登记定价的模型都按保留名 "*" 的单价计费。
+		// 这样新增模型不会因缺价格直接 422 拒绝；管理员可在后台编辑 "*" 定价，
+		// 需要单独计费的模型再补一条精确记录即可覆盖兜底。
+		if fallback, ok := model.GetModelPrice(model.FallbackModelName); ok && fallback != nil {
+			mp = fallback
+			isFallback = true
+			logger.SysWarnf("model %q has no explicit price, billing with fallback price (*): in=%.4f out=%.4f; add a dedicated price entry if needed",
+				modelName, mp.InputPrice, mp.OutputPrice)
+		}
+	}
 	if mp == nil {
 		names := append([]string{modelName}, fallbackModelNames...)
-		return nil, fmt.Errorf("model price not found for model(s): %v; please add a price entry for either the mapped model name or the original request model name", names)
+		return nil, fmt.Errorf("model price not found for model(s): %v; no explicit price and fallback price (*) is disabled or missing; please add a price entry or enable the fallback price", names)
 	}
 	return &PriceResult{
 		InputPrice:      mp.InputPrice,
@@ -64,6 +79,7 @@ func GetModelPrice(modelName string, fallbackModelNames ...string) (*PriceResult
 		PerRequestPrice: mp.PerRequestPrice,
 		BillingType:     mp.BillingType,
 		Found:           true,
+		IsFallback:      isFallback,
 	}, nil
 }
 

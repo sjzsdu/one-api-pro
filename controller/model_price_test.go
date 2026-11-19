@@ -297,3 +297,51 @@ func assertContainsNone(t *testing.T, got, banned []string) {
 		}
 	}
 }
+
+// TestFallbackPriceHandlers 覆盖兜底价的读取与保存 HTTP handler：
+// 读接口始终 200 并返回 data；保存后读接口能读回新值。
+//
+// 版本: v0.0.28
+// 日期: 2026-11-19
+func TestFallbackPriceHandlers(t *testing.T) {
+	// 读接口：无论库中是否有记录都应成功返回 data
+	getResp := runPriceHandler(t, GetFallbackPrice, "")
+	if !getResp.Success {
+		t.Fatalf("GetFallbackPrice should succeed, got %+v", getResp)
+	}
+
+	// 保存接口：写入一组确定值
+	savePayload, _ := json.Marshal(map[string]interface{}{
+		"input_price":       1.5,
+		"output_price":      6.0,
+		"cached_price":      0.75,
+		"per_request_price": 0,
+		"billing_type":      "token",
+		"enabled":           true,
+	})
+	saveResp := runPriceHandler(t, UpdateFallbackPrice, string(savePayload))
+	if !saveResp.Success {
+		t.Fatalf("UpdateFallbackPrice should succeed, got %+v", saveResp)
+	}
+
+	// 读接口应返回刚保存的值
+	got := runPriceHandler(t, GetFallbackPrice, "")
+	if !got.Success {
+		t.Fatalf("GetFallbackPrice after save should succeed, got %+v", got)
+	}
+	b, _ := json.Marshal(got.Data)
+	var price struct {
+		ModelName   string  `json:"model_name"`
+		InputPrice  float64 `json:"input_price"`
+		OutputPrice float64 `json:"output_price"`
+	}
+	if err := json.Unmarshal(b, &price); err != nil {
+		t.Fatalf("decode fallback data: %v; data=%s", err, b)
+	}
+	if price.ModelName != model.FallbackModelName {
+		t.Errorf("model_name = %q, want %q", price.ModelName, model.FallbackModelName)
+	}
+	if price.InputPrice != 1.5 || price.OutputPrice != 6.0 {
+		t.Errorf("prices = (%v, %v), want (1.5, 6.0)", price.InputPrice, price.OutputPrice)
+	}
+}
