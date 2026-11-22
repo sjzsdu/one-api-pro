@@ -61,6 +61,10 @@ func relayHelper(c *gin.Context, relayMode int) *model.ErrorWithStatusCode {
 }
 
 func Relay(c *gin.Context) {
+	if middleware.GetAliasPool(c) != nil {
+		relayAliasPool(c, relaymode.GetByPath(c.Request.URL.Path))
+		return
+	}
 	if errorHandlerChain == nil {
 		initErrorInterceptorChain()
 	}
@@ -85,6 +89,9 @@ func Relay(c *gin.Context) {
 		return
 	}
 
+	if c.Writer.Written() {
+		return
+	}
 	lastFailedChannelId := channelId
 	channelName := c.GetString(ctxkey.ChannelName)
 	group := c.GetString(ctxkey.Group)
@@ -151,6 +158,9 @@ func Relay(c *gin.Context) {
 			channelrouter.DefaultRouter.ReleaseConcurrency(ch.Id)
 		}
 
+		if c.Writer.Written() {
+			return
+		}
 		lastFailedChannelId = ch.Id
 		channelName = ch.Name
 

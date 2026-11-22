@@ -1,7 +1,7 @@
 // user_model_alias_cache.go 用户模型别名的共享及有界本地缓存
 // Caches empty mappings and prevents stale refills after account settings change.
 // 版本: v0.0.28
-// 日期: 2026-11-21
+// 日期: 2026-11-22
 // 作者: Codex
 package model
 
@@ -46,6 +46,9 @@ func readUserModelAliases(userId int) ([]UserModelAlias, error) {
 	seen := map[string]bool{}
 	for i := range items {
 		items[i].Alias = strings.ToLower(items[i].Alias)
+		if err := normalizeAliasPool(&items[i]); err != nil {
+			return nil, err
+		}
 		// Older SQLite/PostgreSQL settings may contain names differing only by case.
 		// Refuse ambiguous configuration instead of choosing a database-dependent winner.
 		if seen[items[i].Alias] {
@@ -57,7 +60,15 @@ func readUserModelAliases(userId int) ([]UserModelAlias, error) {
 }
 
 func cloneUserModelAliases(items []UserModelAlias) []UserModelAlias {
-	return append([]UserModelAlias{}, items...)
+	result := append([]UserModelAlias{}, items...)
+	for i := range result {
+		result[i].Targets = append([]UserModelAliasTarget{}, items[i].Targets...)
+		if items[i].FailoverEnabled != nil {
+			v := *items[i].FailoverEnabled
+			result[i].FailoverEnabled = &v
+		}
+	}
+	return result
 }
 
 func userAliasRedisPrefix(userId int) string {
@@ -119,6 +130,12 @@ func redisUserModelAliases(userId int) ([]UserModelAlias, error) {
 	if err == nil {
 		var items []UserModelAlias
 		if json.Unmarshal([]byte(data), &items) == nil && items != nil {
+			for i := range items {
+				items[i].UserId = userId
+				if e := normalizeAliasPool(&items[i]); e != nil {
+					return nil, e
+				}
+			}
 			return items, nil
 		}
 	}

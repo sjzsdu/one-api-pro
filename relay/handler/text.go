@@ -100,23 +100,33 @@ func RelayTextHelper(c *gin.Context) *model.ErrorWithStatusCode {
 
 	requestBody, err := getRequestBody(c, meta, textRequest, adaptor)
 	if err != nil {
+		if refundErr := billing.ReturnPreConsumedQuotaSync(ctx, preConsumedQuota, meta.TokenId, meta.UserId); refundErr != nil {
+			return openai.ErrorWrapper(refundErr, "quota_rollback_failed", http.StatusInternalServerError)
+		}
 		return openai.ErrorWrapper(err, "convert_request_failed", http.StatusInternalServerError)
 	}
 
 	resp, err := adaptor.DoRequest(c, meta, requestBody)
 	if err != nil {
 		logger.Errorf(ctx, "DoRequest failed: %s", err.Error())
+		if refundErr := billing.ReturnPreConsumedQuotaSync(ctx, preConsumedQuota, meta.TokenId, meta.UserId); refundErr != nil {
+			return openai.ErrorWrapper(refundErr, "quota_rollback_failed", http.StatusInternalServerError)
+		}
 		return openai.ErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
 	if isErrorHappened(meta, resp) {
-		billing.ReturnPreConsumedQuota(ctx, preConsumedQuota, meta.TokenId)
+		if refundErr := billing.ReturnPreConsumedQuotaSync(ctx, preConsumedQuota, meta.TokenId, meta.UserId); refundErr != nil {
+			return openai.ErrorWrapper(refundErr, "quota_rollback_failed", http.StatusInternalServerError)
+		}
 		return RelayErrorHandler(resp)
 	}
 
 	usage, respErr := adaptor.DoResponse(c, resp, meta)
 	if respErr != nil {
 		logger.Errorf(ctx, "respErr is not nil: %+v", respErr)
-		billing.ReturnPreConsumedQuota(ctx, preConsumedQuota, meta.TokenId)
+		if refundErr := billing.ReturnPreConsumedQuotaSync(ctx, preConsumedQuota, meta.TokenId, meta.UserId); refundErr != nil {
+			return openai.ErrorWrapper(refundErr, "quota_rollback_failed", http.StatusInternalServerError)
+		}
 		return respErr
 	}
 	go postConsumeQuota(ctx, usage, meta, textRequest, preConsumedQuota, priceResult, groupDiscount, systemPromptReset)

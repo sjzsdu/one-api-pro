@@ -144,6 +144,19 @@ func CacheUpdateUserQuota(ctx context.Context, id int) error {
 	return err
 }
 
+// CacheInvalidateUserQuota forces the next balance read to load the committed database value.
+// 版本: v0.0.28
+// 日期: 2026-11-22
+func CacheInvalidateUserQuota(id int) error {
+	if !common.RedisEnabled {
+		return nil
+	}
+	if common.RDB == nil {
+		return errors.New("Redis client is not initialized")
+	}
+	return common.RedisDel(fmt.Sprintf("user_quota:%d", id))
+}
+
 func CacheDecreaseUserQuota(id int, quota int64) error {
 	if !common.RedisEnabled {
 		return nil

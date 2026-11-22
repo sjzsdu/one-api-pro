@@ -93,6 +93,18 @@ func Distribute() func(c *gin.Context) {
 			}
 			var err error
 			channel, err = selectChannelViaRouter(c, userGroup, requestModel, userId, false)
+			for err != nil && GetAliasPool(c) != nil {
+				advanced, advanceErr := NextAliasPoolTarget(c)
+				if advanceErr != nil {
+					err = advanceErr
+					break
+				}
+				if !advanced {
+					break
+				}
+				requestModel = c.GetString(ctxkey.RequestModel)
+				channel, err = selectChannelViaRouter(c, userGroup, requestModel, userId, false)
+			}
 			if err != nil {
 				message := fmt.Sprintf("当前分组 %s 下对于模型 %s 无可用渠道", userGroup, requestModel)
 				if channel != nil {
@@ -106,7 +118,7 @@ func Distribute() func(c *gin.Context) {
 		logger.Debugf(ctx, "user id %d, user group: %s, request model: %s, using channel #%d", userId, userGroup, requestModel, channel.Id)
 
 		sessionKey := ""
-		if config.ChannelStickySessionEnabled && !c.GetBool(ctxkey.DisableSessionPin) && userId > 0 && requestModel != "" {
+		if GetAliasPool(c) == nil && config.ChannelStickySessionEnabled && !c.GetBool(ctxkey.DisableSessionPin) && userId > 0 && requestModel != "" {
 			sessionKey = channelrouter.MakeSessionKey(userId, requestModel)
 			c.Set(ctxkey.SessionKey, sessionKey)
 		}
@@ -115,7 +127,13 @@ func Distribute() func(c *gin.Context) {
 			if !channelrouter.DefaultRouter.TryAcquireConcurrency(channel.Id, channel.GetMaxConcurrency()) {
 				logger.Debugf(ctx, "channel #%d at concurrency limit (%d), trying alternate", channel.Id, channel.GetMaxConcurrency())
 				altChannel, altErr := selectChannelViaRouter(c, userGroup, requestModel, userId, false)
-				if altErr == nil && altChannel.Id != channel.Id {
+				if GetAliasPool(c) != nil {
+					if altErr != nil || altChannel == nil || altChannel.Id == channel.Id || !channelrouter.DefaultRouter.TryAcquireConcurrency(altChannel.Id, altChannel.GetMaxConcurrency()) {
+						abortWithMessage(c, http.StatusServiceUnavailable, "模型池渠道并发已满，请稍后重试")
+						return
+					}
+					channel = altChannel
+				} else if altErr == nil && altChannel.Id != channel.Id {
 					channel = altChannel
 				}
 			}
@@ -141,12 +159,16 @@ func Distribute() func(c *gin.Context) {
 }
 
 func selectChannelViaRouter(c *gin.Context, group, modelName string, userId int, ignoreFirstPriority bool) (*model.Channel, error) {
+	if GetAliasPool(c) != nil {
+		return SelectAliasPoolChannel(c, group, modelName, nil)
+	}
+
 	if channelrouter.DefaultRouter == nil {
 		return model.CacheGetRandomSatisfiedChannel(group, modelName, ignoreFirstPriority)
 	}
 
 	sessionKey := ""
-	if config.ChannelStickySessionEnabled && !c.GetBool(ctxkey.DisableSessionPin) && userId > 0 && modelName != "" {
+	if GetAliasPool(c) == nil && config.ChannelStickySessionEnabled && !c.GetBool(ctxkey.DisableSessionPin) && userId > 0 && modelName != "" {
 		sessionKey = channelrouter.MakeSessionKey(userId, modelName)
 	}
 
@@ -174,6 +196,7 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	c.Set(ctxkey.Channel, channel.Type)
 	c.Set(ctxkey.ChannelId, channel.Id)
 	c.Set(ctxkey.ChannelName, channel.Name)
+	c.Set(ctxkey.SystemPrompt, "")
 	if channel.SystemPrompt != nil && *channel.SystemPrompt != "" {
 		c.Set(ctxkey.SystemPrompt, *channel.SystemPrompt)
 	}

@@ -134,11 +134,16 @@ func TokenAuth() func(c *gin.Context) {
 			abortWithMessage(c, http.StatusBadRequest, "missing model in request body")
 			return
 		}
+		if token.Models != nil {
+			c.Set(ctxkey.AvailableModels, *token.Models)
+		}
 		requestModel, err = resolveUserModelAlias(c, token.UserId, requestModel)
 		if err != nil {
 			status := http.StatusBadRequest
 			if errors.Is(err, model.ErrUserModelAliasTargetUnavailable) {
 				status = http.StatusForbidden
+			} else if errors.Is(err, model.ErrAliasPoolCooling) {
+				status = http.StatusServiceUnavailable
 			}
 			abortWithMessage(c, status, err.Error())
 			return
@@ -150,7 +155,7 @@ func TokenAuth() func(c *gin.Context) {
 			// auto routing is enabled every token may use it; the router still
 			// resolves the eventual model within the user's group and its channels.
 			allowAuto := requestModel == "auto" && config.ModelAutoEnabled
-			if requestModel != "" && !allowAuto && !isModelInList(requestModel, *token.Models) {
+			if requestModel != "" && !allowAuto && !isModelInList(requestModel, *token.Models) && !(GetAliasPool(c) != nil && GetAliasPool(c).GlobalGrant) {
 				abortWithMessage(c, http.StatusForbidden, fmt.Sprintf("该令牌无权使用模型：%s", requestModel))
 				return
 			}

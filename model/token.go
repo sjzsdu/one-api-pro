@@ -280,6 +280,9 @@ func PreConsumeTokenQuota(tokenId int, quota int64) (err error) {
 	return err
 }
 
+// PostConsumeTokenQuota settles user quota before token quota and propagates failed balance writes.
+// 版本: v0.0.28
+// 日期: 2026-11-22
 func PostConsumeTokenQuota(tokenId int, quota int64) (err error) {
 	token, err := GetTokenById(tokenId)
 	if err != nil {
@@ -289,6 +292,11 @@ func PostConsumeTokenQuota(tokenId int, quota int64) (err error) {
 		err = DecreaseUserQuota(token.UserId, quota)
 	} else {
 		err = IncreaseUserQuota(token.UserId, -quota)
+	}
+	// Preserve a failed balance write instead of crediting the token and hiding
+	// that error, which would let a model-pool retry continue after a failed refund.
+	if err != nil {
+		return err
 	}
 	if !token.UnlimitedQuota {
 		if quota > 0 {

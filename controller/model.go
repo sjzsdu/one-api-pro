@@ -230,7 +230,7 @@ func ListModels(c *gin.Context) {
 
 // userModelAliasDiscovery classifies account aliases separately from static model names.
 // 版本: v0.0.28
-// 日期: 2026-11-21
+// 日期: 2026-11-22
 func userModelAliasDiscovery(c *gin.Context) (map[string]bool, map[string]bool, map[string]bool) {
 	aliases, visible := map[string]bool{}, map[string]bool{}
 	items, available, err := model.GetUserModelAliasesWithGroupModels(c.Request.Context(), c.GetInt(ctxkey.Id))
@@ -243,17 +243,22 @@ func userModelAliasDiscovery(c *gin.Context) (map[string]bool, map[string]bool, 
 			continue
 		}
 		aliases[item.Alias] = true
-		if !available[item.TargetModel] {
-			continue
-		}
-		allowed := c.GetString(ctxkey.AvailableModels)
-		if allowed == "" {
-			visible[item.Alias] = true
-			continue
-		}
-		for _, name := range strings.Split(allowed, ",") {
-			if name == "*" || name == item.TargetModel {
+		for _, target := range item.Targets {
+			if !available[target.Model] {
+				continue
+			}
+			allowed := c.GetString(ctxkey.AvailableModels)
+			if allowed == "" {
 				visible[item.Alias] = true
+				break
+			}
+			for _, name := range strings.Split(allowed, ",") {
+				if name == "*" || name == target.Model || (item.Source == "global" && strings.EqualFold(name, item.Alias)) {
+					visible[item.Alias] = true
+					break
+				}
+			}
+			if visible[item.Alias] {
 				break
 			}
 		}
@@ -263,7 +268,7 @@ func userModelAliasDiscovery(c *gin.Context) (map[string]bool, map[string]bool, 
 
 // RetrieveModel returns static model metadata or a visible account-local alias.
 // 版本: v0.0.28
-// 日期: 2026-11-21
+// 日期: 2026-11-22
 func RetrieveModel(c *gin.Context) {
 	modelId := c.Param("model")
 	aliases, visible, concrete := userModelAliasDiscovery(c)
@@ -299,6 +304,19 @@ func GetUserAvailableModels(c *gin.Context) {
 			"message": err.Error(),
 		})
 		return
+	}
+	if aliases, available, e := model.GetUserModelAliasesWithGroupModels(ctx, id); e == nil {
+		for _, alias := range aliases {
+			if alias.Source != "global" || available[alias.Alias] {
+				continue
+			}
+			for _, target := range alias.Targets {
+				if available[target.Model] {
+					models = append(models, alias.Alias)
+					break
+				}
+			}
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

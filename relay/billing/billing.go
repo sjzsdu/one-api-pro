@@ -77,3 +77,22 @@ func PostConsumeQuota(ctx context.Context, params *ConsumeQuotaParams) {
 		logger.Error(ctx, fmt.Sprintf("totalQuota consumed is %d, something is wrong", params.TotalQuota))
 	}
 }
+
+// ReturnPreConsumedQuotaSync refunds a failed attempt and invalidates its balance cache before retrying.
+// 版本: v0.0.28
+// 日期: 2026-11-22
+func ReturnPreConsumedQuotaSync(ctx context.Context, quota int64, tokenID, userID int) error {
+	if quota == 0 {
+		return nil
+	}
+	if err := model.PostConsumeTokenQuota(tokenID, -quota); err != nil {
+		return err
+	}
+	// A refund delta is not a balance: INCRBY could recreate an expired key with
+	// only that delta, or add it twice after IncreaseUserQuota already refilled it.
+	if err := model.CacheInvalidateUserQuota(userID); err != nil {
+		// The DB refund is committed. Returning an error would invite another refund.
+		logger.Warnf(ctx, "refund completed for user %d, but quota cache invalidation failed: %v", userID, err)
+	}
+	return nil
+}

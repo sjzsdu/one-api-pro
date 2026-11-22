@@ -1,7 +1,7 @@
 // user_model_alias_test.go 用户模型别名隔离与校验测试
 // Tests account isolation, switching, and validation of model aliases.
 // 版本: v0.0.28
-// 日期: 2026-11-21
+// 日期: 2026-11-22
 // 作者: Codex
 package model
 
@@ -68,7 +68,7 @@ func TestUserModelAliases_IsolationAndSwitch(t *testing.T) {
 
 // TestUserModelAliases_CacheAndNormalization checks negative caching, save invalidation and portable names.
 // 版本: v0.0.28
-// 日期: 2026-11-21
+// 日期: 2026-11-22
 func TestUserModelAliases_CacheAndNormalization(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -91,7 +91,7 @@ func TestUserModelAliases_CacheAndNormalization(t *testing.T) {
 			t.Fatalf("%s %v", target, e)
 		}
 	}
-	if queries != 1 {
+	if queries != 2 {
 		t.Fatalf("empty mapping queried database %d times", queries)
 	}
 	if err = SaveUserModelAliases(context.Background(), 401, []UserModelAlias{{Alias: "Chat-Tool", TargetModel: "deepseek"}}); err != nil {

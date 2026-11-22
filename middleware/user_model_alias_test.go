@@ -1,7 +1,7 @@
 // user_model_alias_test.go 别名解析及令牌权限集成测试
 // Verifies alias resolution before token permissions and reusable request bodies.
 // 版本: v0.0.28
-// 日期: 2026-11-21
+// 日期: 2026-11-22
 // 作者: Codex
 package middleware
 
@@ -191,6 +191,37 @@ func TestTokenAuth_UserAliasContentType(t *testing.T) {
 		r.ServeHTTP(w, req)
 		if w.Code != 400 || strings.Contains(w.Body.String(), "multipart") || !strings.Contains(w.Body.String(), "application/json") {
 			t.Fatalf("%q: %d %s", contentType, w.Code, w.Body.String())
+		}
+	}
+}
+
+// TestTokenAuth_UserAliasOpaqueReferences keeps explicit rejection while allowing absent references.
+// 版本: v0.0.28
+// 日期: 2026-11-22
+func TestTokenAuth_UserAliasOpaqueReferences(t *testing.T) {
+	seedAliasGroup(t)
+	id, _ := seedUser(t, "alias-opaque", model.RoleCommonUser, "aliasopaquekey", true)
+	if err := model.SaveUserModelAliases(context.Background(), id, []model.UserModelAlias{{Alias: "opaque-test", TargetModel: "deepseek"}}); err != nil {
+		t.Fatal(err)
+	}
+	r := gin.New()
+	r.POST("/v1/chat/completions", TokenAuth(), func(c *gin.Context) { c.Status(204) })
+	for _, test := range []struct {
+		field  string
+		status int
+	}{
+		{`"previous_response_id":"resp-previous"`, 400},
+		{`"conversation":{"id":"conv-previous"}`, 400},
+		{`"previous_response_id":""`, 204},
+		{`"conversation":null`, 204},
+	} {
+		req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"opaque-test",`+test.field+`}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer sk-aliasopaquekey")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != test.status || (test.status == 400 && !strings.Contains(w.Body.String(), "请发送完整聊天历史")) {
+			t.Fatalf("%s: %d %s", test.field, w.Code, w.Body.String())
 		}
 	}
 }

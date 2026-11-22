@@ -54,6 +54,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/topup", controller.TopUp)
 				selfRoute.GET("/available_models", controller.GetUserAvailableModels)
 				selfRoute.GET("/model_aliases", controller.GetUserModelAliases)
+				selfRoute.GET("/model_aliases/effective", controller.GetEffectiveModelAliases)
 				selfRoute.PUT("/model_aliases", controller.UpdateUserModelAliases)
 				selfRoute.GET("/model_alias_targets", controller.GetUserAliasTargets)
 				selfRoute.GET("/subscription", controller.GetUserSubscriptionInfo)
@@ -71,6 +72,11 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.DELETE("/:id", controller.DeleteUser)
 			}
 		}
+		globalAliasRoute := apiRouter.Group("/model_alias/global")
+		globalAliasRoute.Use(middleware.RootAuth())
+		globalAliasRoute.GET("", controller.GetGlobalModelAliases)
+		globalAliasRoute.PUT("", controller.UpdateGlobalModelAliases)
+		globalAliasRoute.GET("/targets", controller.GetGlobalAliasTargets)
 		optionRoute := apiRouter.Group("/option")
 		optionRoute.Use(middleware.RootAuth())
 		{

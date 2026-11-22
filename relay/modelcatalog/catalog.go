@@ -31,7 +31,7 @@ const dateLayout = "2006-01-02"
 
 // AsOf is the date this catalog was last calibrated against provider docs.
 // The API returns it to the UI so operators can see how fresh the defaults are.
-const AsOf = "2026-11-19"
+const AsOf = "2026-11-21"
 
 // FeaturedModel is one recommended model.
 type FeaturedModel struct {
@@ -127,14 +127,28 @@ var catalog = map[int]Preset{
 			{ID: "glm-5", Name: "GLM 5", Group: "chat"},
 		},
 	},
+	// 方舟 Agent Plan（订阅套餐）端点。BaseURL 必须填到版本号前一层，
+	// adaptor 会补 /v3/chat/completions，最终地址为
+	// https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions
+	// （2026-11-21 线上验证；写成 .../api/plan/v3 会多拼一层 /v3 而 404）。
+	// 套餐 key 与按量计费 key 不能混用：套餐 key 走 /api/v3 会返回 401，
+	// 按量计费 key 走 /api/plan 会返回 404 UnsupportedModel。
+	// 未开通套餐的账号把 BaseURL 改回 https://ark.cn-beijing.volces.com 即可。
 	channeltype.Doubao: {
-		BaseURL: "https://ark.cn-beijing.volces.com",
+		BaseURL: "https://ark.cn-beijing.volces.com/api/plan",
 		Name:    "火山方舟豆包",
 		Models: []FeaturedModel{
-			{ID: "doubao-seed-1-6", Name: "豆包 Seed 1.6", Group: "chat"},
-			{ID: "doubao-seed-1-6-thinking", Name: "豆包 Seed 1.6 Thinking", Group: "reasoning"},
-			{ID: "doubao-seed-1-6-flash", Name: "豆包 Seed 1.6 Flash", Group: "chat"},
-			{ID: "doubao-seed-1-6-vision", Name: "豆包 Seed 1.6 Vision", Group: "vision"},
+			{ID: "doubao-seed-2.1-pro", Name: "豆包 Seed 2.1 Pro", Group: "reasoning"},
+			{ID: "doubao-seed-2.1-lite", Name: "豆包 Seed 2.1 Lite", Group: "chat"},
+			{ID: "doubao-seed-2.0-mini", Name: "豆包 Seed 2.0 Mini", Group: "chat"},
+			{ID: "doubao-seed-evolving", Name: "豆包 Seed Evolving", Group: "chat"},
+			{ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro", Group: "reasoning"},
+			{ID: "deepseek-v4-flash", Name: "DeepSeek V4 Flash", Group: "chat"},
+			{ID: "deepseek-v4.1-flash", Name: "DeepSeek V4.1 Flash", Group: "vision"},
+			{ID: "glm-5.3-flash", Name: "GLM 5.3 Flash", Group: "vision"},
+			{ID: "glm-5.3", Name: "GLM 5.3", Group: "reasoning"},
+			{ID: "kimi-k3.1-pro", Name: "Kimi K3.1 Pro", Group: "reasoning"},
+			{ID: "kimi-k2.8-preview", Name: "Kimi K2.8 Preview", Group: "chat"},
 		},
 	},
 }
