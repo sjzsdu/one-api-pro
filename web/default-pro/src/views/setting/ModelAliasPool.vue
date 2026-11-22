@@ -10,11 +10,12 @@
         <strong v-else class="alias-name">{{ row.alias }}</strong>
       </a-form-item>
       <div class="candidate-heading">{{ t('candidates') }}</div>
+      <p v-if="!readonly" class="source-hint">{{ t('sourceHint') }}</p>
       <div v-for="(target, targetIndex) in row.targets" :key="targetIndex" class="candidate-row">
         <div class="candidate-fields">
           <a-form-item :label="t('target')" class="model-field">
             <a-select v-if="!readonly" v-model="target.model" :aria-label="`${t('target')} ${index + 1}-${targetIndex + 1}`" allow-search :disabled="disabled" :placeholder="t('select')">
-              <a-option v-for="name in targets" :key="name" :value="name">{{ name }}</a-option>
+              <a-option v-for="option in modelOptions" :key="option.value" :value="option.value" :label="option.label">{{ option.label }}</a-option>
             </a-select>
             <span v-else class="model-name">{{ target.model }}</span>
           </a-form-item>
@@ -46,6 +47,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { buildModelAliasOptions } from '@/utils/modelAliases'
 import messages from '@/i18n/pages/modelAliases'
 
 const props = defineProps({
@@ -55,6 +57,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['test', 'remove'])
 const { t } = useI18n({ useScope: 'local', messages })
+const modelOptions = computed(() => buildModelAliasOptions(props.targets, props.metadata, t('unknownProvider')))
 const aliasInput = ref(null)
 defineExpose({ focusAlias: () => aliasInput.value?.focus() })
 const totalWeight = computed(() => props.row.targets.reduce((sum, target) => sum + (Number(target.weight) || 0), 0))
@@ -78,6 +81,7 @@ function capability(name) {
 .pool-row.editor-only { margin: 0; padding: 0; border: 0; }
 .alias-name, .model-name { color: var(--color-text-1); overflow-wrap: anywhere; }
 .candidate-heading { margin-bottom: 12px; color: var(--color-text-2); font-weight: 500; }
+.source-hint { color: var(--color-text-3); line-height: 1.6; font-size: 12px; margin: -4px 0 12px; }
 .candidate-row { padding: 12px; margin-bottom: 8px; background: var(--color-fill-1); border-radius: var(--border-radius-small); }
 .candidate-fields { display: flex; align-items: flex-start; gap: 12px; }
 .candidate-fields :deep(.arco-form-item) { margin-bottom: 0; min-width: 0; }

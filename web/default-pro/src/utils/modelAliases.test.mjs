@@ -5,7 +5,37 @@
 // 作者: Codex
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeModelAlias, mergeModelAliasDraft, serializeModelAliases, validateModelAliases, buildAliasTestRequest } from './modelAliases.js'
+import { normalizeModelAlias, mergeModelAliasDraft, serializeModelAliases, validateModelAliases, buildAliasTestRequest, buildModelAliasOptions } from './modelAliases.js'
+
+test('candidate labels combine distinct providers while preserving one raw model value', () => {
+  const models = ['GLM', 'DeepSeek', 'GLM']
+  const metadata = [
+    { model_name: 'GLM', provider: 'providerB' },
+    { model_name: 'GLM', provider: 'providerA' },
+    { model_name: 'GLM', provider: 'providerA' },
+    { model_name: 'DeepSeek', provider: 'deepseek' },
+    { model_name: 'inaccessible', provider: 'hidden' },
+  ]
+  const before = JSON.stringify({ models, metadata })
+  assert.deepEqual(buildModelAliasOptions(models, metadata, 'Unknown source'), [
+    { value: 'GLM', label: 'providerA/providerB:GLM' },
+    { value: 'DeepSeek', label: 'deepseek:DeepSeek' },
+  ])
+  assert.equal(JSON.stringify({ models, metadata }), before)
+})
+
+test('candidate labels use localized unknown sources without case-insensitive metadata matches', () => {
+  assert.deepEqual(buildModelAliasOptions(['GLM', 'glm', 'custom'], [
+    { model_name: 'GLM', provider: '  zhipu  ' },
+    { model_name: 'custom', provider: '' },
+    { model_name: 'custom', provider: null },
+  ], '未知来源'), [
+    { value: 'GLM', label: 'zhipu:GLM' },
+    { value: 'glm', label: '未知来源:glm' },
+    { value: 'custom', label: '未知来源:custom' },
+  ])
+  assert.deepEqual(buildModelAliasOptions([], [], 'Unknown source'), [])
+})
 
 test('modal drafts and merged candidates never mutate the saved list', () => {
   const saved = [normalizeModelAlias({ alias: 'chat-tool', targets: [{ model: 'GLM', weight: 3 }] })]

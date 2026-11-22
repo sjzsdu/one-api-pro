@@ -4,6 +4,23 @@
 // 日期: 2026-11-22
 // 作者: Codex
 
+// buildModelAliasOptions labels catalog sources without changing model routing identities.
+// 版本: v0.0.28
+// 日期: 2026-11-22
+export function buildModelAliasOptions(models, metadata, unknownProviderLabel) {
+  const providersByModel = new Map()
+  for (const item of metadata) {
+    const provider = typeof item.provider === 'string' ? item.provider.trim() : ''
+    if (!provider) continue
+    if (!providersByModel.has(item.model_name)) providersByModel.set(item.model_name, new Set())
+    providersByModel.get(item.model_name).add(provider)
+  }
+  return [...new Set(models)].map(model => {
+    const providers = [...(providersByModel.get(model) || [])].sort()
+    return { value: model, label: `${providers.length ? providers.join('/') : unknownProviderLabel}:${model}` }
+  })
+}
+
 // normalizeModelAlias builds an editable pool without mutating the API response.
 // 版本: v0.0.28
 // 日期: 2026-11-22
