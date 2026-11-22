@@ -19,6 +19,16 @@ export function normalizeModelAlias(item = {}) {
   }
 }
 
+// mergeModelAliasDraft copies a modal draft into a separate list for whole-scope validation.
+// 版本: v0.0.28
+// 日期: 2026-11-22
+export function mergeModelAliasDraft(rows, draft, index = -1) {
+  const merged = rows.map(normalizeModelAlias)
+  if (index < 0) merged.push(normalizeModelAlias(draft))
+  else merged[index] = normalizeModelAlias(draft)
+  return merged
+}
+
 // serializeModelAliases emits the canonical pool and its legacy first-target field.
 // 版本: v0.0.28
 // 日期: 2026-11-22
