@@ -1,5 +1,7 @@
 <template>
-  <a-spin :loading="loading" class="setting-container">
+  <a-spin :loading="loading" class="setting-container" style="width: 100%">
+    <ModelAliases />
+    <a-divider :margin="24" />
     <div class="section"><h3>{{ $t('settingPage.personal.affLink') }}</h3>
       <a-form layout="vertical" class="setting-form">
         <a-form-item><a-button @click="getAff" :loading="affLoading" size="large">{{ $t('settingPage.personal.getAffLink') }}</a-button></a-form-item>
@@ -40,6 +42,7 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
+import ModelAliases from './ModelAliases.vue'
 import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import { useAuthStore } from '@/stores/auth'

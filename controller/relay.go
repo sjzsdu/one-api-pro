@@ -365,6 +365,10 @@ func getChannelCooldownSeconds(channelId int) int {
 //   - the same `prevErr` (or a new error) when no fallback applies / fallback
 //     itself failed; caller should surface the returned error to the client.
 func tryFallbackChannel(c *gin.Context, group string, relayMode int, prevErr *model.ErrorWithStatusCode, lastFailedChannelId int) *model.ErrorWithStatusCode {
+	// A user alias promises a fixed target; only same-model channel retries apply.
+	if c.GetString(ctxkey.UserModelAlias) != "" {
+		return prevErr
+	}
 	fb, err := dbmodel.GetFallbackChannel(group)
 	if err != nil {
 		logger.Errorf(c.Request.Context(), "GetFallbackChannel error: %+v", err)

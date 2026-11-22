@@ -50,4 +50,13 @@ function onMenuClick(key) {
  * tables) can actually scroll instead of being pushed past the viewport
  * and clipped by an outer arco-layout overflow-x:hidden rule. */
 .setting-content { flex: 1; padding: 15px; overflow-y: auto; overflow-x: hidden; min-width: 0; }
+@media (max-width: 768px) {
+  .setting-card :deep(.arco-card-body) { flex-direction: column; }
+  .setting-sidebar { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid var(--color-border-2); padding: 12px 0; }
+  .sidebar-title { padding: 0 12px 8px; }
+  .setting-menu { overflow-x: auto; }
+  .setting-menu :deep(.arco-menu-inner) { display: flex; width: max-content; padding: 0 8px; }
+  .setting-menu :deep(.arco-menu-item) { flex-shrink: 0; width: auto; margin: 0 4px; }
+  .setting-content { padding: 12px; }
+}
 </style>

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -131,6 +132,15 @@ func TokenAuth() func(c *gin.Context) {
 		// here, before channel selection. Other endpoints keep their behaviour.
 		if strings.HasPrefix(c.Request.URL.Path, "/v1/multimodal/embeddings") && requestModel == "" {
 			abortWithMessage(c, http.StatusBadRequest, "missing model in request body")
+			return
+		}
+		requestModel, err = resolveUserModelAlias(c, token.UserId, requestModel)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, model.ErrUserModelAliasTargetUnavailable) {
+				status = http.StatusForbidden
+			}
+			abortWithMessage(c, status, err.Error())
 			return
 		}
 		c.Set(ctxkey.RequestModel, requestModel)

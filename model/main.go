@@ -220,6 +220,9 @@ func migrateDB() error {
 	if err = DB.AutoMigrate(&Token{}); err != nil {
 		return err
 	}
+	if err = DB.AutoMigrate(&UserModelAlias{}); err != nil {
+		return err
+	}
 	if err = DB.AutoMigrate(&User{}); err != nil {
 		return err
 	}

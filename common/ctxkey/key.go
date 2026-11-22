@@ -11,6 +11,7 @@ const (
 	ChannelId            = "channel_id"
 	SpecificChannelId    = "specific_channel_id"
 	RequestModel         = "request_model"
+	UserModelAlias       = "user_model_alias"
 	ConvertedRequest     = "converted_request"
 	OriginalModel        = "original_model"
 	Group                = "group"

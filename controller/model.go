@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
+	"github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/relay/meta"
 	"github.com/modelbus/one-api-pro/relay/registry"
@@ -190,8 +191,20 @@ func ListModels(c *gin.Context) {
 	for _, availableModel := range availableModels {
 		modelSet[availableModel] = true
 	}
+	aliases, visibleAliases, concrete := userModelAliasDiscovery(c)
+	for name := range modelSet {
+		if aliases[strings.ToLower(name)] && !concrete[name] {
+			delete(modelSet, name)
+		}
+	}
+	for name := range visibleAliases {
+		modelSet[name] = true
+	}
 	availableOpenAIModels := make([]OpenAIModels, 0)
 	for _, model := range models {
+		if aliases[model.Id] {
+			continue
+		}
 		if _, ok := modelSet[model.Id]; ok {
 			modelSet[model.Id] = false
 			availableOpenAIModels = append(availableOpenAIModels, model)
@@ -215,21 +228,57 @@ func ListModels(c *gin.Context) {
 	})
 }
 
+// userModelAliasDiscovery classifies account aliases separately from static model names.
+// 版本: v0.0.28
+// 日期: 2026-11-21
+func userModelAliasDiscovery(c *gin.Context) (map[string]bool, map[string]bool, map[string]bool) {
+	aliases, visible := map[string]bool{}, map[string]bool{}
+	items, available, err := model.GetUserModelAliasesWithGroupModels(c.Request.Context(), c.GetInt(ctxkey.Id))
+	if err != nil {
+		logger.Error(c.Request.Context(), "model alias discovery unavailable: "+err.Error())
+		return aliases, visible, available
+	}
+	for _, item := range items {
+		if available[item.Alias] {
+			continue
+		}
+		aliases[item.Alias] = true
+		if !available[item.TargetModel] {
+			continue
+		}
+		allowed := c.GetString(ctxkey.AvailableModels)
+		if allowed == "" {
+			visible[item.Alias] = true
+			continue
+		}
+		for _, name := range strings.Split(allowed, ",") {
+			if name == "*" || name == item.TargetModel {
+				visible[item.Alias] = true
+				break
+			}
+		}
+	}
+	return aliases, visible, available
+}
+
+// RetrieveModel returns static model metadata or a visible account-local alias.
+// 版本: v0.0.28
+// 日期: 2026-11-21
 func RetrieveModel(c *gin.Context) {
 	modelId := c.Param("model")
-	if model, ok := modelsMap[modelId]; ok {
-		c.JSON(200, model)
-	} else {
-		Error := relaymodel.Error{
-			Message: fmt.Sprintf("The model '%s' does not exist", modelId),
-			Type:    "invalid_request_error",
-			Param:   "model",
-			Code:    "model_not_found",
-		}
-		c.JSON(200, gin.H{
-			"error": Error,
-		})
+	aliases, visible, concrete := userModelAliasDiscovery(c)
+	aliasId := strings.ToLower(modelId)
+	if visible[aliasId] && !concrete[modelId] {
+		c.JSON(200, OpenAIModels{Id: aliasId, Object: "model", Created: 1626777600, OwnedBy: "custom", Root: aliasId})
+		return
 	}
+	if !aliases[aliasId] || concrete[modelId] {
+		if item, ok := modelsMap[modelId]; ok {
+			c.JSON(200, item)
+			return
+		}
+	}
+	c.JSON(200, gin.H{"error": relaymodel.Error{Message: fmt.Sprintf("The model '%s' does not exist", modelId), Type: "invalid_request_error", Param: "model", Code: "model_not_found"}})
 }
 
 func GetUserAvailableModels(c *gin.Context) {

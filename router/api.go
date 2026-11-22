@@ -53,6 +53,9 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/aff", controller.GetAffCode)
 				selfRoute.POST("/topup", controller.TopUp)
 				selfRoute.GET("/available_models", controller.GetUserAvailableModels)
+				selfRoute.GET("/model_aliases", controller.GetUserModelAliases)
+				selfRoute.PUT("/model_aliases", controller.UpdateUserModelAliases)
+				selfRoute.GET("/model_alias_targets", controller.GetUserAliasTargets)
 				selfRoute.GET("/subscription", controller.GetUserSubscriptionInfo)
 			}
 

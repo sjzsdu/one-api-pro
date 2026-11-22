@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"sync"
 	"time"
 
@@ -162,6 +163,12 @@ func RecordTopupLog(ctx context.Context, userId int, content string, quota int) 
 func RecordConsumeLog(ctx context.Context, log *Log) {
 	if !config.LogConsumeEnabled {
 		return
+	}
+	if alias, _ := ctx.Value(ctxkey.UserModelAlias).(string); alias != "" {
+		if log.ResponseModelName == "" {
+			log.ResponseModelName = log.ModelName
+		}
+		log.ModelName = alias
 	}
 	log.Username = GetUsernameById(log.UserId)
 	log.CreatedAt = helper.GetTimestamp()
