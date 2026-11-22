@@ -33,7 +33,7 @@
           <h3>{{ $t('settingPage.pricing.fallbackTab') }}</h3>
         </div>
         <a-alert class="fallback-tip" type="info" size="small">
-          <template #message>{{ $t('settingPage.pricing.fallbackTip') }}</template>
+          {{ $t('settingPage.pricing.fallbackTip') }}
         </a-alert>
         <a-form :model="fbForm" layout="vertical" class="fallback-form">
           <a-form-item :label="$t('settingPage.pricing.fallbackEnabled')">
