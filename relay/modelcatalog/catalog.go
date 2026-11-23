@@ -98,6 +98,9 @@ var catalog = map[int]Preset{
 			{ID: "qwen3.6-flash", Name: "通义千问 3.6 Flash", Group: "chat"},
 			{ID: "qwen3-vl-plus", Name: "通义千问 VL Plus", Group: "vision"},
 			{ID: "qwen-vl-plus", Name: "通义千问 VL Plus（旧）", Group: "vision", Deprecated: "2026-06-01", Replacement: "qwen3-vl-plus"},
+			{ID: "wan2.7-image", Name: "万相 2.7 文生图", Group: "image"},
+			{ID: "cosyvoice-v3-flash", Name: "CosyVoice 语音合成", Group: "audio"},
+			{ID: "qwen-audio-3.1-tts-flash", Name: "Qwen TTS 语音合成", Group: "audio"},
 		},
 	},
 	channeltype.Gemini: {

@@ -44,8 +44,45 @@ type ImageRequest struct {
 		N     int    `json:"n,omitempty"`
 		Steps string `json:"steps,omitempty"`
 		Scale string `json:"scale,omitempty"`
+		Seed  *int64 `json:"seed,omitempty"`
 	} `json:"parameters,omitempty"`
 	ResponseFormat string `json:"response_format,omitempty"`
+}
+
+// NativeTTSRequest 是 DashScope 原生非实时语音合成（SpeechSynthesizer）的请求体。
+// OpenAI /v1/audio/speech 的扁平字段会被适配器转换到这里。
+// 版本: v0.0.28
+// 日期: 2026-11-23
+type NativeTTSRequest struct {
+	Model string `json:"model"`
+	Input struct {
+		Text       string   `json:"text"`
+		Voice      string   `json:"voice"`
+		Format     string   `json:"format"`
+		SampleRate int      `json:"sample_rate"`
+		Rate       *float64 `json:"rate,omitempty"`
+	} `json:"input"`
+}
+
+// NativeTTSResponse 是 SpeechSynthesizer 的非流式响应。音频以 URL 形式返回
+// （24h 有效），需二次下载后作为二进制流回写客户端。
+// 版本: v0.0.28
+// 日期: 2026-11-23
+type NativeTTSResponse struct {
+	Output struct {
+		Audio struct {
+			URL string `json:"url"`
+		} `json:"audio"`
+		FinishReason string `json:"finish_reason,omitempty"`
+	} `json:"output"`
+	Usage struct {
+		Characters   *int `json:"characters,omitempty"`
+		InputTokens  *int `json:"input_tokens,omitempty"`
+		OutputTokens *int `json:"output_tokens,omitempty"`
+	} `json:"usage"`
+	Code      string `json:"code,omitempty"`
+	Message   string `json:"message,omitempty"`
+	RequestId string `json:"request_id,omitempty"`
 }
 
 type TaskResponse struct {

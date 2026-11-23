@@ -17,6 +17,7 @@ import (
 	"github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/relay"
+	adaptorpkg "github.com/modelbus/one-api-pro/relay/adaptor"
 	"github.com/modelbus/one-api-pro/relay/adaptor/openai"
 	billingratio "github.com/modelbus/one-api-pro/relay/billing/ratio"
 	"github.com/modelbus/one-api-pro/relay/meta"
@@ -100,6 +101,9 @@ func getImageCostRatio(imageRequest *relaymodel.ImageRequest) (float64, error) {
 	return imageCostRatio, nil
 }
 
+// RelayImageHelper settles images only after successful response normalization.
+// 版本: v0.0.28
+// 日期: 2026-11-23
 func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatusCode {
 	ctx := c.Request.Context()
 	meta := meta.GetByContext(c)
@@ -173,11 +177,14 @@ func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 	}
 	adaptor.Init(meta)
 
-	switch meta.ChannelID {
-	case "zhipu", "ali", "replicate", "baidu":
-		finalRequest, err := adaptor.ConvertImageRequest(imageRequest)
+	// 协议转换改为能力探测：实现 ImageRequestRewriter 的适配器声明自己需要
+	// 把 OpenAI 图片请求重写为上游原生结构。历史实现在这里硬编码了
+	// zhipu/ali/replicate/baidu 四个渠道 ID，新增 provider 必须改 handler；
+	// 现在把决定权交给适配器自身，符合开放封闭原则。
+	if rewriter, ok := adaptor.(adaptorpkg.ImageRequestRewriter); ok {
+		finalRequest, err := rewriter.RewriteImageRequest(imageRequest)
 		if err != nil {
-			return openai.ErrorWrapper(err, "convert_image_request_failed", http.StatusInternalServerError)
+			return openai.ErrorWrapper(err, "convert_image_request_failed", http.StatusBadRequest)
 		}
 		jsonStr, err := json.Marshal(finalRequest)
 		if err != nil {
@@ -192,7 +199,14 @@ func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 		return openai.ErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
 
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return RelayErrorHandler(resp)
+	}
+	imageSucceeded := false
 	defer func(ctx context.Context) {
+		if !imageSucceeded {
+			return
+		}
 		if resp != nil &&
 			resp.StatusCode != http.StatusCreated &&
 			resp.StatusCode != http.StatusOK {
@@ -283,5 +297,6 @@ func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 		return respErr
 	}
 
+	imageSucceeded = true
 	return nil
 }

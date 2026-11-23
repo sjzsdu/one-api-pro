@@ -70,9 +70,11 @@ func ConvertEmbeddingRequest(request model.GeneralOpenAIRequest) *EmbeddingReque
 func ConvertImageRequest(request model.ImageRequest) *ImageRequest {
 	var imageRequest ImageRequest
 	imageRequest.Input.Prompt = request.Prompt
+	imageRequest.Input.NegativePrompt = request.NegativePrompt
 	imageRequest.Model = request.Model
 	imageRequest.Parameters.Size = strings.Replace(request.Size, "x", "*", -1)
 	imageRequest.Parameters.N = request.N
+	imageRequest.Parameters.Seed = request.Seed
 	imageRequest.ResponseFormat = request.ResponseFormat
 
 	return &imageRequest

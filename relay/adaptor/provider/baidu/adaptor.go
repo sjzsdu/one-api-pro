@@ -116,6 +116,11 @@ func (a *Adaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) 
 	return request, nil
 }
 
+// RewriteImageRequest implements adaptor.ImageRequestRewriter.
+func (a *Adaptor) RewriteImageRequest(request *model.ImageRequest) (any, error) {
+	return a.ConvertImageRequest(request)
+}
+
 func (a *Adaptor) DoRequest(c *gin.Context, meta *meta.Meta, requestBody io.Reader) (*http.Response, error) {
 	return adaptor.DoRequestHelper(a, c, meta, requestBody)
 }

@@ -228,9 +228,19 @@ var defaultModelPrices = []ModelPrice{
 	{ModelName: "deepseek-reasoner", InputPrice: 0.55, OutputPrice: 2.19, CachedPrice: 0.14, BillingType: BillingTypeToken, Enabled: true},
 	{ModelName: "dall-e-2", PerRequestPrice: 0.016, BillingType: BillingTypePerRequest, Enabled: true},
 	{ModelName: "dall-e-3", PerRequestPrice: 0.04, BillingType: BillingTypePerRequest, Enabled: true},
+	// 文生图：百炼 wan2.7 系列（支持自定义 size，按张计费）。
+	{ModelName: "wan2.7-image", PerRequestPrice: 0.04, BillingType: BillingTypePerRequest, Enabled: true},
+	{ModelName: "wan2.7-image-pro", PerRequestPrice: 0.08, BillingType: BillingTypePerRequest, Enabled: true},
 	{ModelName: "whisper-1", InputPrice: 0.006, OutputPrice: 0, BillingType: BillingTypeToken, Enabled: true},
 	{ModelName: "tts-1", InputPrice: 0.015, OutputPrice: 0, BillingType: BillingTypeToken, Enabled: true},
 	{ModelName: "tts-1-hd", InputPrice: 0.03, OutputPrice: 0, BillingType: BillingTypeToken, Enabled: true},
+	// 字符型 TTS：InputPrice 是每百万 Unicode 字符的网关售价（元）。
+	// Qwen 3.1 Flash 使用上游 input/output tokens；其 InputPrice/OutputPrice 为每百万 token 售价。
+	// 日期: 2026-11-23
+	{ModelName: "cosyvoice-v3-flash", InputPrice: 0.8, OutputPrice: 0, BillingType: BillingTypeToken, Enabled: true},
+	{ModelName: "cosyvoice-v3-plus", InputPrice: 1.6, OutputPrice: 0, BillingType: BillingTypeToken, Enabled: true},
+	{ModelName: "qwen-audio-3.1-tts-flash", InputPrice: 1.2, OutputPrice: 0, BillingType: BillingTypeToken, Enabled: true},
+	{ModelName: "qwen-audio-3.1-tts-plus", InputPrice: 2.4, OutputPrice: 0, BillingType: BillingTypeToken, Enabled: true},
 	{ModelName: "text-embedding-3-small", InputPrice: 0.02, OutputPrice: 0, BillingType: BillingTypeToken, Enabled: true},
 	{ModelName: "text-embedding-3-large", InputPrice: 0.13, OutputPrice: 0, BillingType: BillingTypeToken, Enabled: true},
 	{ModelName: "gemini-1.5-pro", InputPrice: 1.25, OutputPrice: 5, CachedPrice: 0.3125, BillingType: BillingTypeToken, Enabled: true},

@@ -20,6 +20,40 @@ type MultimodalEmbeddingURLer interface {
 	GetMultimodalEmbeddingURL(meta *meta.Meta) (string, error)
 }
 
+// AudioSpeechRequester is an optional capability implemented by adaptors that
+// speak a native TTS protocol (e.g. DashScope SpeechSynthesizer) instead of the
+// OpenAI /v1/audio/speech JSON body. The audio handler type-asserts before
+// calling it; adaptors that don't implement it keep the OpenAI pass-through.
+//
+// 可选能力：把 OpenAI speech 请求转换为上游原生 TTS 请求体。
+// 未实现的渠道沿用 OpenAI 协议透传，行为零变化。
+// 版本: v0.0.28
+// 日期: 2026-11-23
+type AudioSpeechRequester interface {
+	ConvertAudioSpeechRequest(request *model.AudioSpeechRequest) (any, error)
+}
+
+// AudioSpeechHandler normalizes native speech before any client response or settlement.
+// 版本: v0.0.28
+// 日期: 2026-11-23
+type AudioSpeechHandler interface {
+	AudioSpeechResponse(c *gin.Context, resp *http.Response, meta *meta.Meta) (*model.AudioSpeechResponse, *model.ErrorWithStatusCode)
+}
+
+// ImageRequestRewriter is an optional capability implemented by adaptors that
+// need to rewrite the OpenAI image request into a provider-specific shape.
+// The image handler replaced its hard-coded channel-ID whitelist with this
+// assertion, so adding a new image provider no longer requires touching the
+// handler. Adaptors that don't implement it pass the OpenAI body through.
+//
+// 可选能力：把 OpenAI 图片请求重写为上游原生结构。
+// image handler 已用该断言取代硬编码渠道白名单，新增图片 provider 无需改 handler。
+// 版本: v0.0.28
+// 日期: 2026-11-23
+type ImageRequestRewriter interface {
+	RewriteImageRequest(request *model.ImageRequest) (any, error)
+}
+
 type Adaptor interface {
 	Init(meta *meta.Meta)
 	GetRequestURL(meta *meta.Meta) (string, error)

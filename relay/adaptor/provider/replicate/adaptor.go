@@ -39,6 +39,11 @@ func (*Adaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) {
 	}, nil
 }
 
+// RewriteImageRequest implements adaptor.ImageRequestRewriter.
+func (a *Adaptor) RewriteImageRequest(request *model.ImageRequest) (any, error) {
+	return a.ConvertImageRequest(request)
+}
+
 func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.GeneralOpenAIRequest) (any, error) {
 	if !request.Stream {
 		// TODO: support non-stream mode

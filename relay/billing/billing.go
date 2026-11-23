@@ -36,8 +36,15 @@ type ConsumeQuotaParams struct {
 	CompletionTokens int
 	CachedTokens     int
 	BillingType      string
+	// BillingUnit optionally labels character-priced speech in consumption logs.
+	// 版本: v0.0.28
+	// 日期: 2026-11-23
+	BillingUnit string
 }
 
+// PostConsumeQuota settles balance and records explicit billing units; zero-price calls are valid.
+// 版本: v0.0.28
+// 日期: 2026-11-23
 func PostConsumeQuota(ctx context.Context, params *ConsumeQuotaParams) {
 	err := model.PostConsumeTokenQuota(params.TokenId, params.QuotaDelta)
 	if err != nil {
@@ -50,6 +57,9 @@ func PostConsumeQuota(ctx context.Context, params *ConsumeQuotaParams) {
 	if params.TotalQuota != 0 {
 		logContent := fmt.Sprintf("定价：输入¥%.6f/百万tokens × %d + 输出¥%.6f/百万tokens × %d",
 			params.InputPrice, params.PromptTokens, params.OutputPrice, params.CompletionTokens)
+		if params.BillingUnit == "characters" {
+			logContent = fmt.Sprintf("定价：输入¥%.6f/百万字符 × %d", params.InputPrice, params.PromptTokens)
+		}
 		if params.CachedTokens > 0 {
 			logContent += fmt.Sprintf(" + 缓存¥%.6f/百万tokens × %d", params.CachedPrice, params.CachedTokens)
 		}
@@ -73,7 +83,7 @@ func PostConsumeQuota(ctx context.Context, params *ConsumeQuotaParams) {
 		model.UpdateUserUsedQuotaAndRequestCount(params.UserId, params.TotalQuota)
 		model.UpdateChannelUsedQuota(params.ChannelId, params.TotalQuota)
 	}
-	if params.TotalQuota <= 0 {
+	if params.TotalQuota < 0 {
 		logger.Error(ctx, fmt.Sprintf("totalQuota consumed is %d, something is wrong", params.TotalQuota))
 	}
 }

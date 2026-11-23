@@ -1,6 +1,11 @@
 package ali
 
 var ModelList = []string{
+	// 原生非实时语音合成（走 AudioSpeechRequester + AudioSpeechHandler）。
+	"cosyvoice-v3-flash",
+	"cosyvoice-v3-plus",
+	"qwen-audio-3.1-tts-flash",
+	"qwen-audio-3.1-tts-plus",
 	"qwen-image-2.0-pro-2026-06-22",
 	"test-sre-gpu-auto-handle",
 	"fun-asr-flash-2026-06-15",
