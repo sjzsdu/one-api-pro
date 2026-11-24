@@ -151,6 +151,48 @@ func ListConfiguredModels(c *gin.Context) {
 	c.JSON(200, gin.H{"success": true, "data": items})
 }
 
+// tokenModelsHaveWildcard reports whether a token model whitelist contains the
+// "*" wildcard. The wildcard only carries meaning inside the gateway's own
+// authorization (middleware.isModelInList); OpenAI-compatible clients treat
+// "/v1/models" as a literal list for validate_model and therefore reject real
+// models such as qwen-plus when "*" is returned verbatim.
+func tokenModelsHaveWildcard(models []string) bool {
+	for _, name := range models {
+		if strings.TrimSpace(name) == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// expandWildcardTokenModels replaces the "*" wildcard with the concrete models
+// actually available to the user's group, while preserving explicitly listed
+// models. Duplicates, blanks and the wildcard itself are dropped. When no
+// wildcard is present the input is returned unchanged so exact whitelists keep
+// their existing behaviour.
+func expandWildcardTokenModels(tokenModels, groupModels []string) []string {
+	if !tokenModelsHaveWildcard(tokenModels) {
+		return tokenModels
+	}
+	seen := make(map[string]bool, len(tokenModels)+len(groupModels))
+	expanded := make([]string, 0, len(tokenModels)+len(groupModels))
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" || name == "*" || seen[name] {
+			return
+		}
+		seen[name] = true
+		expanded = append(expanded, name)
+	}
+	for _, name := range tokenModels {
+		add(name)
+	}
+	for _, name := range groupModels {
+		add(name)
+	}
+	return expanded
+}
+
 func ListModels(c *gin.Context) {
 	ctx := c.Request.Context()
 	var availableModels []string
@@ -160,6 +202,16 @@ func ListModels(c *gin.Context) {
 		userId := c.GetInt(ctxkey.Id)
 		userGroup, _ := model.CacheGetUserGroup(userId)
 		availableModels, _ = model.CacheGetGroupModels(ctx, userGroup)
+	}
+	// A token whitelist containing "*" must be expanded before being returned:
+	// the gateway authorizes "*" as "allow all", but clients see a literal "*"
+	// and reject real model names in validate_model. Expand to the group's
+	// concrete models so the list reflects what the account can actually call.
+	if tokenModelsHaveWildcard(availableModels) {
+		userId := c.GetInt(ctxkey.Id)
+		userGroup, _ := model.CacheGetUserGroup(userId)
+		groupModels, _ := model.CacheGetGroupModels(ctx, userGroup)
+		availableModels = expandWildcardTokenModels(availableModels, groupModels)
 	}
 	modelSet := make(map[string]bool)
 	for _, availableModel := range availableModels {
