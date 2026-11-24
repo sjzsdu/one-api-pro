@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
@@ -114,21 +113,25 @@ func ListAllModels(c *gin.Context) {
 }
 
 type configuredModelItem struct {
-	ModelName                string   `json:"model_name"`
-	DisplayName              string   `json:"display_name,omitempty"`
-	Description              string   `json:"description,omitempty"`
-	ChannelID                int      `json:"channel_id"`
-	ChannelName              string   `json:"channel_name"`
-	ChannelType              int      `json:"channel_type"`
-	ChannelStatus            int      `json:"channel_status"`
-	Group                    string   `json:"group"`
-	Provider                 string   `json:"provider"`
-	ContextLength            int      `json:"context_length,omitempty"`
-	InputModalities          []string `json:"input_modalities,omitempty"`
-	OutputModalities         []string `json:"output_modalities,omitempty"`
-	SupportedParameters      []string `json:"supported_parameters,omitempty"`
-	InputPriceUSDPerMillion  *float64 `json:"input_price_usd_per_million,omitempty"`
-	OutputPriceUSDPerMillion *float64 `json:"output_price_usd_per_million,omitempty"`
+	CatalogModelName         string                        `json:"catalog_model_name"`
+	ModelName                string                        `json:"model_name"`
+	DisplayName              string                        `json:"display_name,omitempty"`
+	Description              string                        `json:"description,omitempty"`
+	ChannelID                int                           `json:"channel_id"`
+	ChannelName              string                        `json:"channel_name"`
+	ChannelType              int                           `json:"channel_type"`
+	ChannelStatus            int                           `json:"channel_status"`
+	Group                    string                        `json:"group"`
+	Provider                 string                        `json:"provider"`
+	Capabilities             model.ModelCapabilities       `json:"capabilities"`
+	GatewaySupport           map[string][]string           `json:"gateway_support"`
+	ProbeOperations          map[string]OperationProbeSpec `json:"probe_operations"`
+	ContextLength            int                           `json:"context_length,omitempty"`
+	InputModalities          []string                      `json:"input_modalities,omitempty"`
+	OutputModalities         []string                      `json:"output_modalities,omitempty"`
+	SupportedParameters      []string                      `json:"supported_parameters,omitempty"`
+	InputPriceUSDPerMillion  *float64                      `json:"input_price_usd_per_million,omitempty"`
+	OutputPriceUSDPerMillion *float64                      `json:"output_price_usd_per_million,omitempty"`
 }
 
 // ListConfiguredModels expands each configured channel into its models. It is
@@ -137,44 +140,15 @@ type configuredModelItem struct {
 func ListConfiguredModels(c *gin.Context) {
 	channels, err := model.GetAllChannels(0, 0, "all")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+		c.JSON(200, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	openRouterNames := make([]string, 0)
-	for _, channel := range channels {
-		if channel.Type == 20 {
-			openRouterNames = append(openRouterNames, strings.Split(channel.Models, ",")...)
-		}
-	}
-	catalog, err := model.GetModelCatalogs("openrouter", openRouterNames)
+	items, err := configuredModelItems(channels)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+		c.JSON(200, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	items := make([]configuredModelItem, 0)
-	for _, channel := range channels {
-		provider := "configured"
-		if channel.Type == 20 {
-			provider = "openrouter"
-		}
-		for _, name := range strings.Split(channel.Models, ",") {
-			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
-			}
-			item := configuredModelItem{ModelName: name, ChannelID: channel.Id, ChannelName: channel.Name,
-				ChannelType: channel.Type, ChannelStatus: channel.Status, Group: channel.Group, Provider: provider}
-			if metadata, ok := catalog[name]; ok {
-				item.DisplayName, item.Description, item.ContextLength = metadata.DisplayName, metadata.Description, metadata.ContextLength
-				item.InputPriceUSDPerMillion, item.OutputPriceUSDPerMillion = metadata.InputPricePerMillion, metadata.OutputPricePerMillion
-				_ = json.Unmarshal([]byte(metadata.InputModalities), &item.InputModalities)
-				_ = json.Unmarshal([]byte(metadata.OutputModalities), &item.OutputModalities)
-				_ = json.Unmarshal([]byte(metadata.SupportedParameters), &item.SupportedParameters)
-			}
-			items = append(items, item)
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": items})
+	c.JSON(200, gin.H{"success": true, "data": items})
 }
 
 func ListModels(c *gin.Context) {

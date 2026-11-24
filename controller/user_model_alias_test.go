@@ -41,7 +41,7 @@ func TestUserModelAlias_APIAndRelay(t *testing.T) {
 	}
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(1)
-	if err = db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Ability{}, &model.UserModelAlias{}, &model.Log{}, &model.ModelCatalog{}); err != nil {
+	if err = db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Ability{}, &model.UserModelAlias{}, &model.Log{}, &model.ModelCatalog{}, &model.InferenceSettlement{}); err != nil {
 		t.Fatal(err)
 	}
 	oldDB, oldLog, oldRedis, oldLogEnabled, oldBatch := model.DB, model.LOG_DB, common.RedisEnabled, config.LogConsumeEnabled, config.BatchUpdateEnabled

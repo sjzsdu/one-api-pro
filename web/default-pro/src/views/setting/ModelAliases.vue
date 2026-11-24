@@ -35,6 +35,7 @@ import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import { useAuthStore } from '@/stores/auth'
 import { modelAliasApi } from '@/api/modelAliases'
+import api from '@/api'
 import { normalizeModelAlias, mergeModelAliasDraft, serializeModelAliases, validateModelAliases } from '@/utils/modelAliases'
 import messages from '@/i18n/pages/modelAliases'
 import ModelAliasSummary from './ModelAliasSummary.vue'
@@ -58,14 +59,18 @@ async function load(force = false) {
   state.loading = true; state.error = ''
   try {
     const readOnlyGlobal = selectedScope === 'global' && !authStore.isRoot
-    const [aliases, targets] = await Promise.all([
+    const [aliases, targets, catalog] = await Promise.all([
       readOnlyGlobal ? modelAliasApi.effective() : modelAliasApi.list(selectedScope),
       modelAliasApi.targets(readOnlyGlobal ? 'personal' : selectedScope),
+      api.get('/api/model/options', { params: selectedScope === 'global' && authStore.isRoot ? { scope: 'all' } : {} }),
     ])
     if (!aliases.data.success || !targets.data.success) throw new Error(aliases.data.message || targets.data.message || t('failed'))
     const items = Array.isArray(aliases.data.data) ? aliases.data.data : []
     state.rows = (readOnlyGlobal ? items.filter(item => item.source === 'global') : items).map(normalizeModelAlias)
-    state.targets = targets.data.data.models || []; state.metadata = targets.data.data.metadata || []
+    state.targets = targets.data.data.models || []
+    const normalized = new Map((catalog.data.success ? catalog.data.data || [] : []).map(item => [item.model_name, item]))
+    state.metadata = (targets.data.data.metadata || []).map(item => ({ ...item, ...(normalized.get(item.model_name) || {}) }))
+    for (const item of normalized.values()) if (!state.metadata.some(row => row.model_name === item.model_name)) state.metadata.push(item)
     state.loaded = true
   } catch (error) { state.error = error.message || t('failed') }
   finally { state.loading = false }

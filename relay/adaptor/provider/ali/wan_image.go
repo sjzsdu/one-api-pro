@@ -15,11 +15,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/modelbus/one-api-pro/common/helper"
+	dbmodel "github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/relay/adaptor/openai"
 	schema "github.com/modelbus/one-api-pro/relay/schema"
 )
 
-func isWan27(model string) bool { return model == "wan2.7-image" || model == "wan2.7-image-pro" }
+func isWan27(model string) bool {
+	family := dbmodel.AliOperationModelFamily(model)
+	return family == "wan2.7-image" || family == "wan2.7-image-pro"
+}
 
 func convertWanImageRequest(request *schema.ImageRequest) (any, error) {
 	if request.N < 1 || request.N > 4 {
@@ -57,7 +61,8 @@ func wanImageHandler(c *gin.Context, resp *http.Response) (*schema.ErrorWithStat
 			} `json:"choices"`
 		} `json:"output"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&native); err != nil {
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (64<<20)+1))
+	if err != nil || len(raw) > 64<<20 || json.Unmarshal(raw, &native) != nil {
 		return openai.ErrorWrapper(errors.New("invalid Wan image JSON"), "unmarshal_response_body_failed", http.StatusBadGateway), nil
 	}
 	if native.Code != "" {

@@ -35,7 +35,7 @@ func TestAliasPrefix_RealRelayFailover(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Ability{}, &model.UserModelAlias{}, &model.Log{}, &model.ModelCatalog{}, &model.UserPlan{}); e != nil {
+	if e = db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Ability{}, &model.UserModelAlias{}, &model.Log{}, &model.ModelCatalog{}, &model.InferenceSettlement{}, &model.UserPlan{}); e != nil {
 		t.Fatal(e)
 	}
 	sqlDB, _ := db.DB()
@@ -63,8 +63,9 @@ func TestAliasPrefix_RealRelayFailover(t *testing.T) {
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		if fail {
-			w.WriteHeader(503)
-			fmt.Fprint(w, `{"error":{"message":"temporary failure","type":"server_error","code":"unavailable"}}`)
+			// A 5xx may have consumed tokens; failover requires a confirmed rejection.
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":{"message":"request rejected","type":"rate_limit_error","code":"rate_limit_exceeded"}}`)
 			return
 		}
 		fmt.Fprintf(w, `{"id":"auto-response","object":"chat.completion","model":%q,"choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`, name)

@@ -246,12 +246,14 @@
               allow-clear
             />
             <div v-if="filteredModelOptions.length" class="model-options">
-              <a-checkbox
-                v-for="model in filteredModelOptions"
-                :key="model"
-                :model-value="selectedModels.includes(model)"
-                @change="toggleModel(model, $event)"
-              >
+              <div v-for="group in groupedModelOptions" :key="group.key" class="model-group">
+                <div class="model-group-title">{{ group.label }} <span class="model-group-count">{{ group.items.length }}</span></div>
+                <a-checkbox
+                  v-for="model in group.items"
+                  :key="model"
+                  :model-value="selectedModels.includes(model)"
+                  @change="toggleModel(model, $event)"
+                >
                 <div class="model-option-content">
                   <div class="model-option-name">{{ modelCatalog[model]?.name || model }}</div>
                   <div v-if="modelCatalog[model]?.name" class="model-option-id">{{ model }}</div>
@@ -268,6 +270,7 @@
                   </div>
                 </div>
               </a-checkbox>
+              </div>
             </div>
             <div v-else-if="visibleModelOptions.length" class="model-empty">{{ $t('channelPage.noMatchingModels') }}</div>
             <div v-else class="model-empty">{{ $t('channelPage.noModelsLoadedTip') }}</div>
@@ -327,8 +330,9 @@ import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import { IconPlus, IconApps, IconSwap } from '@arco-design/web-vue/es/icon'
 import api from '@/api'
+import { groupModelsByCategory } from '@/utils/modelCategory'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const defaultOpenAICodexModels = [
   'gpt-5.6',
@@ -414,6 +418,7 @@ const refreshingModels = ref(false)
 const validatingModels = ref(false)
 const modelOptions = ref([])
 const modelCatalog = ref({})
+const configuredCapabilityRows = ref([])
 const modelSearch = ref('')
 const manualModels = ref('')
 const availableModelOptions = ref([])
@@ -481,6 +486,16 @@ const filteredModelOptions = computed(() => {
       .filter(Boolean).join(' ').toLowerCase()
     return haystack.includes(keyword)
   })
+})
+
+// Group the picker by modality; classification prefers catalog modalities and
+// falls back to model-name markers, same rules as the model catalog page.
+const groupedModelOptions = computed(() => {
+  const lang = locale.value === 'en' ? 'en' : 'zh'
+  const descriptors = new Map(configuredCapabilityRows.value.filter(row => row.channel_type === form.type && (!isEdit.value || row.channel_id === editingId.value)).map(row => [row.model_name, row]))
+  const items = filteredModelOptions.value.map(model => ({ ...(modelCatalog.value[model] || {}), ...(descriptors.get(model) || {}), model_name: model, model }))
+  return groupModelsByCategory(items, item => item.model_name, lang)
+    .map(group => ({ ...group, items: group.items.map(item => item.model) }))
 })
 
 function parseModelNames(value) {
@@ -1047,7 +1062,15 @@ async function handleDeleteDisabled() {
   }
 }
 
+async function fetchCapabilityCatalog() {
+  try {
+    const { data } = await api.get('/api/channel/model_catalog')
+    if (data.success) configuredCapabilityRows.value = data.data || []
+  } catch { /* Manual channel configuration remains available. */ }
+}
+
 onMounted(() => {
+  fetchCapabilityCatalog()
   fetchChannels()
   fetchAvailableModels()
   fetchGroups()
@@ -1326,9 +1349,9 @@ onMounted(() => {
   margin-bottom: 10px;
 }
 .model-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   max-height: 360px;
   overflow-y: auto;
   padding: 10px;
@@ -1336,6 +1359,34 @@ onMounted(() => {
   background: var(--color-bg-2);
   border: 1px solid var(--color-border-2);
   border-radius: 4px;
+}
+.model-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.model-group-title {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border-1);
+  color: var(--color-text-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+.model-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--color-fill-2);
+  color: var(--color-text-2);
+  font-weight: 400;
 }
 .model-options :deep(.arco-checkbox) {
   min-width: 0;

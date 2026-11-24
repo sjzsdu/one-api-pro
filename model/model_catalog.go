@@ -1,3 +1,8 @@
+// model_catalog.go 供应商模型目录与独立人工能力覆盖
+// Stores discovery metadata separately from administrator capability overrides and pricing.
+// 版本: v0.0.28
+// 日期: 2026-11-23
+// 作者: Codex
 package model
 
 import (
@@ -20,12 +25,17 @@ type ModelCatalog struct {
 	InputModalities       string   `json:"input_modalities" gorm:"type:text"`
 	OutputModalities      string   `json:"output_modalities" gorm:"type:text"`
 	SupportedParameters   string   `json:"supported_parameters" gorm:"type:text"`
+	Capabilities          string   `json:"capabilities" gorm:"type:text"`
+	CapabilityOverride    string   `json:"capability_override" gorm:"type:text"`
 	InputPricePerMillion  *float64 `json:"input_price_usd_per_million"`
 	OutputPricePerMillion *float64 `json:"output_price_usd_per_million"`
 	SourceURL             string   `json:"source_url" gorm:"type:text"`
 	UpdatedAt             int64    `json:"updated_at" gorm:"bigint;index"`
 }
 
+// UpsertModelCatalog refreshes provider metadata without overwriting manual capability overrides.
+// 版本: v0.0.28
+// 日期: 2026-11-23
 func UpsertModelCatalog(items []ModelCatalog) error {
 	if len(items) == 0 {
 		return nil
@@ -36,7 +46,7 @@ func UpsertModelCatalog(items []ModelCatalog) error {
 	}
 	return DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "provider"}, {Name: "model_name"}},
-		DoUpdates: clause.AssignmentColumns([]string{"display_name", "description", "context_length", "input_modalities", "output_modalities", "supported_parameters", "input_price_per_million", "output_price_per_million", "source_url", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"display_name", "description", "context_length", "input_modalities", "output_modalities", "supported_parameters", "capabilities", "input_price_per_million", "output_price_per_million", "source_url", "updated_at"}),
 	}).Create(&items).Error
 }
 

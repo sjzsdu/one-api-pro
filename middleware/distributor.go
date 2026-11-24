@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -58,6 +59,10 @@ func Distribute() func(c *gin.Context) {
 			}
 		} else {
 			requestModel = c.GetString(ctxkey.RequestModel)
+			if requestModel == "auto" && !isChatAutoPath(c.Request.URL.Path) {
+				abortWithMessage(c, http.StatusBadRequest, "auto routing is only supported for chat operations")
+				return
+			}
 			if requestModel == "auto" && config.ModelAutoEnabled && modelrouter.DefaultRouter != nil {
 				c.Set(ctxkey.OriginalRequestModel, requestModel)
 				var parsed schema.GeneralOpenAIRequest
@@ -106,6 +111,11 @@ func Distribute() func(c *gin.Context) {
 				channel, err = selectChannelViaRouter(c, userGroup, requestModel, userId, false)
 			}
 			if err != nil {
+				var operationErr *operationSelectionError
+				if errors.As(err, &operationErr) {
+					abortOperationSelection(c, operationErr)
+					return
+				}
 				message := fmt.Sprintf("当前分组 %s 下对于模型 %s 无可用渠道", userGroup, requestModel)
 				if channel != nil {
 					logger.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
@@ -114,6 +124,10 @@ func Distribute() func(c *gin.Context) {
 				abortWithMessage(c, http.StatusServiceUnavailable, message)
 				return
 			}
+		}
+		if capabilityErr := channelOperationError(c, channel, requestModel); capabilityErr != nil {
+			abortOperationSelection(c, &operationSelectionError{reason: capabilityErr})
+			return
 		}
 		logger.Debugf(ctx, "user id %d, user group: %s, request model: %s, using channel #%d", userId, userGroup, requestModel, channel.Id)
 
@@ -160,36 +174,48 @@ func Distribute() func(c *gin.Context) {
 
 func selectChannelViaRouter(c *gin.Context, group, modelName string, userId int, ignoreFirstPriority bool) (*model.Channel, error) {
 	if GetAliasPool(c) != nil {
-		return SelectAliasPoolChannel(c, group, modelName, nil)
+		excluded := map[int]bool{}
+		var rejected error
+		eligible := 0
+		for _, ch := range model.GetAliasPoolChannels(group, modelName) {
+			if err := channelOperationError(c, ch, modelName); err != nil {
+				excluded[ch.Id] = true
+				if rejected == nil {
+					rejected = err
+				}
+			} else {
+				eligible++
+			}
+		}
+		if eligible == 0 && rejected != nil {
+			return nil, &operationSelectionError{reason: rejected}
+		}
+		return SelectAliasPoolChannel(c, group, modelName, excluded)
 	}
-
-	if channelrouter.DefaultRouter == nil {
-		return model.CacheGetRandomSatisfiedChannel(group, modelName, ignoreFirstPriority)
+	candidates := OperationChannelCandidates(c, group, modelName)
+	if len(candidates) == 0 {
+		if value, ok := c.Get("gateway.operation_candidate_error"); ok {
+			if reason, ok := value.(*operationSelectionError); ok {
+				return nil, reason
+			}
+		}
+		return nil, fmt.Errorf("no channel supports requested operation")
 	}
-
 	sessionKey := ""
-	if GetAliasPool(c) == nil && config.ChannelStickySessionEnabled && !c.GetBool(ctxkey.DisableSessionPin) && userId > 0 && modelName != "" {
+	if config.ChannelStickySessionEnabled && !c.GetBool(ctxkey.DisableSessionPin) && userId > 0 && modelName != "" {
 		sessionKey = channelrouter.MakeSessionKey(userId, modelName)
 	}
-
-	candidates := model.GetChannelCandidates(group, modelName)
-	if len(candidates) == 0 {
-		return model.CacheGetRandomSatisfiedChannel(group, modelName, ignoreFirstPriority)
+	req := &channelrouter.RouteRequest{Group: group, Model: modelName, UserId: userId, IgnoreFirstPriority: ignoreFirstPriority, SessionKey: sessionKey}
+	r := channelrouter.DefaultRouter
+	if r == nil {
+		r = channelrouter.NewChannelRouter()
 	}
+	return r.Route(c.Request.Context(), req, candidates)
+}
 
-	req := &channelrouter.RouteRequest{
-		Group:               group,
-		Model:               modelName,
-		UserId:              userId,
-		IgnoreFirstPriority: ignoreFirstPriority,
-		SessionKey:          sessionKey,
-	}
-
-	ch, err := channelrouter.DefaultRouter.Route(c.Request.Context(), req, candidates)
-	if err != nil {
-		return model.CacheGetRandomSatisfiedChannel(group, modelName, ignoreFirstPriority)
-	}
-	return ch, nil
+func abortOperationSelection(c *gin.Context, err *operationSelectionError) {
+	c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "one_api_error", "code": "model_operation_unsupported", "message": err.Error()}})
+	c.Abort()
 }
 
 func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, modelName string) {
@@ -416,4 +442,8 @@ func flattenResponsesToolsForRouter(items []json.RawMessage, namespace string) [
 		})
 	}
 	return result
+}
+
+func isChatAutoPath(path string) bool {
+	return path == "/v1/chat/completions" || path == "/v1/completions" || path == "/v1/messages" || path == "/v1/responses"
 }

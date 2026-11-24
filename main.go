@@ -122,6 +122,7 @@ func main() {
 	}
 	openai.InitTokenEncoders()
 	client.Init()
+	controller.StartInferenceWorker(context.Background())
 	channelrouter.InitRouter()
 	modelrouter.InitRouter()
 	if prewarmed, err := modelrouter.PrewarmDefaultRouter(context.Background()); err != nil {

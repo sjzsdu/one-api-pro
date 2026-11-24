@@ -48,7 +48,7 @@ func setupMultimodalFixture(t *testing.T, userQuota int64) (int, int, int) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&dbmodel.User{}, &dbmodel.Token{}, &dbmodel.Log{}, &dbmodel.Channel{}); err != nil {
+	if err := db.AutoMigrate(&dbmodel.User{}, &dbmodel.Token{}, &dbmodel.Log{}, &dbmodel.Channel{}, &dbmodel.InferenceSettlement{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	dbmodel.DB = db
@@ -196,29 +196,58 @@ func TestRelayMultimodalEmbedding_PassthroughAndBilling(t *testing.T) {
 	}
 }
 
-func TestRelayMultimodalEmbedding_MissingUsageRefundsPreConsume(t *testing.T) {
-	uid, tid, _ := setupMultimodalFixture(t, 10_000)
-	reqBody := []byte(`{"model":"qwen3-vl-embedding","input":{"contents":[{"text":"abc"}]}}`)
-	upstreamBody := []byte(`{"output":{"embeddings":[{"embedding":[0.1]}]}}`)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write(upstreamBody)
-	}))
-	defer srv.Close()
-	oldClient := client.HTTPClient
-	client.HTTPClient = srv.Client()
-	defer func() { client.HTTPClient = oldClient }()
-
-	c, w := newMultimodalContext(reqBody, "alibailian", srv.URL, uid, tid)
-	before := readQuota(t, uid)
-	if bizErr := RelayMultimodalEmbeddingHelper(c); bizErr != nil {
-		t.Fatalf("helper returned error: %+v", bizErr)
+// TestRelayMultimodalEmbedding_MissingUsageRespectsBilling holds paid unknown usage for reconciliation.
+// 版本: v0.0.28
+// 日期: 2026-11-23
+func TestRelayMultimodalEmbedding_MissingUsageRespectsBilling(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		input, output, flat float64
+		billing             string
+		pending             bool
+	}{
+		{"paid_tokens", 1, 1, 0, dbmodel.BillingTypeToken, true},
+		{"zero_price", 0, 0, 0, dbmodel.BillingTypeToken, false},
+		{"flat_price", 0, 0, 0.01, dbmodel.BillingTypePerRequest, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			uid, tid, _ := setupMultimodalFixture(t, 10000)
+			cache := dbmodel.GetModelPriceCacheForTest()
+			cache.Lock()
+			dbmodel.SetModelPriceMapForTest(map[string]*dbmodel.ModelPrice{multimodalTestModel: {ModelName: multimodalTestModel, InputPrice: tc.input, OutputPrice: tc.output, PerRequestPrice: tc.flat, BillingType: tc.billing, Enabled: true}})
+			cache.Unlock()
+			upstreamBody := []byte(`{"output":{"embeddings":[{"embedding":[0.1]}]}}`)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(upstreamBody) }))
+			defer srv.Close()
+			oldClient := client.HTTPClient
+			client.HTTPClient = srv.Client()
+			defer func() { client.HTTPClient = oldClient }()
+			c, w := newMultimodalContext([]byte(`{"model":"qwen3-vl-embedding","input":{"contents":[{"text":"abc"}]}}`), "alibailian", srv.URL, uid, tid)
+			bizErr := RelayMultimodalEmbeddingHelper(c)
+			row := readTextSettlement(t)
+			if c.Writer.Header().Get("X-Inference-Id") != row.Key {
+				t.Fatal("missing audit key")
+			}
+			if tc.pending {
+				if bizErr == nil || bizErr.Error.Code != "usage_pending" || row.Status != "reserved" || row.PendingReason != "multimodal_usage_missing" {
+					t.Fatalf("missing paid usage lost hold: err=%+v row=%+v", bizErr, row)
+				}
+				if w.Body.Len() != 0 || readQuota(t, uid) != 10000-row.ReservedQuota {
+					t.Fatal("pending result returned free success or released hold")
+				}
+			} else {
+				if bizErr != nil || row.Status != "settled" || !bytes.Equal(w.Body.Bytes(), upstreamBody) {
+					t.Fatalf("known-price request failed: err=%+v row=%+v", bizErr, row)
+				}
+				if tc.name == "zero_price" && row.TotalQuota != 0 {
+					t.Fatal("free model charged")
+				}
+				if tc.name == "flat_price" && row.TotalQuota <= 0 {
+					t.Fatal("flat price not charged")
+				}
+			}
+		})
 	}
-	if w.Code != http.StatusOK || !bytes.Equal(w.Body.Bytes(), upstreamBody) {
-		t.Fatalf("response not passed through: status=%d body=%q", w.Code, w.Body.Bytes())
-	}
-	// ReturnPreConsumedQuota refunds in a goroutine; wait for the DB write.
-	waitForQuota(t, uid, before)
 }
 
 func TestRelayMultimodalEmbedding_UpstreamErrorKeepsRawMessage(t *testing.T) {

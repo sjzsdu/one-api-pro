@@ -175,6 +175,7 @@ func InitDB() {
 		return
 	}
 
+	InitModelCapabilityCache(DB)
 	sqlDB := setDBConns(DB)
 
 	if !config.IsMasterNode {
@@ -213,6 +214,9 @@ func InitDB() {
 }
 
 func migrateDB() error {
+	if err := DB.AutoMigrate(&InferenceSettlement{}, &InferenceJob{}, &InferenceAttempt{}, &InferenceAsset{}, &InferenceJobReconciliation{}, &InferenceSession{}, &InferenceSessionTurn{}, &InferenceReconciliation{}); err != nil {
+		return err
+	}
 	var err error
 	if err = DB.AutoMigrate(&Channel{}); err != nil {
 		return err

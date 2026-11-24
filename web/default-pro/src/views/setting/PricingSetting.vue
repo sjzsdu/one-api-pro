@@ -6,14 +6,21 @@
           <h3>{{ $t('settingPage.pricing.modelTab') }}</h3>
           <a-button type="primary" @click="openModelPrice()"><template #icon><icon-plus /></template>{{ $t('settingPage.pricing.add') }}</a-button>
         </div>
+        <a-select v-model="categoryFilter" :aria-label="locale === 'en' ? 'Model category' : '模型类型'" class="category-filter">
+          <a-option value="all">{{ locale === 'en' ? 'All categories' : '全部类型' }}</a-option>
+          <a-option v-for="category in MODEL_CATEGORY_ORDER" :key="category" :value="category">{{ modelCategoryLabel(category, locale) }}</a-option>
+        </a-select>
         <a-table
           row-key="id"
           :columns="mpColumns"
-          :data="modelPrices"
+          :data="filteredModelPrices"
           :pagination="false"
           size="medium"
           :scroll="mpScroll"
         >
+          <template #inputPrice="{ record }"><div>{{ record.input_price }}</div><small>{{ billingUnits(record.model_name).input }}</small></template>
+          <template #outputPrice="{ record }"><div>{{ record.output_price }}</div><small>{{ billingUnits(record.model_name).output }}</small></template>
+          <template #requestPrice="{ record }"><div>{{ record.per_request_price }}</div><small>{{ billingUnits(record.model_name).perRequest }}</small></template>
           <template #billing="{ record }">
             <a-tag :color="record.billing_type==='token'?'blue':'green'" size="small">{{ record.billing_type==='token' ? $t('settingPage.pricing.billingToken') : $t('settingPage.pricing.billingRequest') }}</a-tag>
           </template>
@@ -95,15 +102,18 @@
 
     <a-modal v-model:visible="mpVisible" :title="mpEditing ? $t('settingPage.pricing.editModelTitle') : $t('settingPage.pricing.addModelTitle')" @ok="handleSaveMP" :ok-loading="mpSaving" width="640">
       <a-form :model="mpForm" layout="vertical">
+        <a-alert :type="billingUnits(mpForm.model_name).ambiguous ? 'warning' : 'info'" class="price-unit-note">
+          {{ locale === 'en' ? 'All operations of a model currently share these prices. Check each operation’s units; separate prices per operation are not supported yet.' : '当前同一模型的所有操作共用这组单价。请核对各操作的实际单位，暂不支持按操作分别定价。' }}
+        </a-alert>
         <a-form-item :label="$t('settingPage.pricing.modelName')" required>
-          <a-input v-model="mpForm.model_name" placeholder="gpt-4o" />
+          <GroupedModelSelect v-model="mpForm.model_name" :options="pricingModelOptions" :metadata="modelMetadata" allow-search allow-create placeholder="gpt-4o" />
         </a-form-item>
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item :label="$t('settingPage.pricing.inputPrice')"><a-input-number v-model="mpForm.input_price" :style="{ width: '100%' }" :precision="6" /></a-form-item>
+            <a-form-item :label="`${$t('settingPage.pricing.inputPrice')} · ${billingUnits(mpForm.model_name).input}`"><a-input-number v-model="mpForm.input_price" :style="{ width: '100%' }" :precision="6" /></a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item :label="$t('settingPage.pricing.outputPrice')"><a-input-number v-model="mpForm.output_price" :style="{ width: '100%' }" :precision="6" /></a-form-item>
+            <a-form-item :label="`${$t('settingPage.pricing.outputPrice')} · ${billingUnits(mpForm.model_name).output}`"><a-input-number v-model="mpForm.output_price" :style="{ width: '100%' }" :precision="6" /></a-form-item>
           </a-col>
         </a-row>
         <a-row :gutter="16">
@@ -111,7 +121,7 @@
             <a-form-item :label="$t('settingPage.pricing.cachedPrice')"><a-input-number v-model="mpForm.cached_price" :style="{ width: '100%' }" :precision="6" /></a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item :label="$t('settingPage.pricing.perRequestPrice')"><a-input-number v-model="mpForm.per_request_price" :style="{ width: '100%' }" :precision="6" /></a-form-item>
+            <a-form-item :label="`${$t('settingPage.pricing.perRequestPrice')} · ${billingUnits(mpForm.model_name).perRequest}`"><a-input-number v-model="mpForm.per_request_price" :style="{ width: '100%' }" :precision="6" /></a-form-item>
           </a-col>
         </a-row>
         <a-form-item :label="$t('settingPage.pricing.billingType')">
@@ -133,7 +143,7 @@
             <a-form-item :label="$t('settingPage.pricing.groupName')" required><a-input v-model="gpForm.group_name" placeholder="vip" /></a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item :label="$t('settingPage.pricing.modelName')" required><a-input v-model="gpForm.model_name" placeholder="gpt-4o" /></a-form-item>
+            <a-form-item :label="$t('settingPage.pricing.modelName')" required><GroupedModelSelect v-model="gpForm.model_name" :options="pricingModelOptions" :metadata="modelMetadata" allow-search allow-create placeholder="gpt-4o" /></a-form-item>
           </a-col>
         </a-row>
         <a-form-item :label="$t('settingPage.pricing.discount')">
@@ -150,13 +160,21 @@ import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import { IconPlus } from '@arco-design/web-vue/es/icon'
 import api from '@/api'
+import GroupedModelSelect from '@/components/GroupedModelSelect.vue'
+import { MODEL_CATEGORY_ORDER, classifyModel, modelCategoryLabel } from '@/utils/modelCategory'
+import { modelBillingUnits } from '@/utils/modelBilling'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const tab = ref('model')
 const loading = ref(false)
 const modelPrices = ref([])
 const groupPrices = ref([])
+const modelMetadata = ref([])
+const categoryFilter = ref('all')
+function billingUnits(name) { return modelBillingUnits(modelMetadata.value.find(item => item.model_name === name) || { model_name: name }, locale.value) }
+const pricingModelOptions = computed(() => [...new Set([...modelMetadata.value.map(item => item.model_name), ...modelPrices.value.map(item => item.model_name)])])
+const filteredModelPrices = computed(() => modelPrices.value.filter(item => categoryFilter.value === 'all' || classifyModel(modelMetadata.value.find(model => model.model_name === item.model_name) || item) === categoryFilter.value))
 
 // Columns + scroll per arco-design table#scroll convention:
 //  - the first column (模型 / 分组) has NO width so it absorbs leftover
@@ -168,10 +186,10 @@ const groupPrices = ref([])
 //  - fixed: 'right' keeps the 操作 column pinned while scrolling
 const mpColumns = computed(() => [
   { title: t('settingPage.pricing.colModel'), dataIndex: 'model_name' },
-  { title: t('settingPage.pricing.colInputPrice'), dataIndex: 'input_price', width: 110 },
-  { title: t('settingPage.pricing.colOutputPrice'), dataIndex: 'output_price', width: 110 },
+  { title: t('settingPage.pricing.colInputPrice'), slotName: 'inputPrice', width: 110 },
+  { title: t('settingPage.pricing.colOutputPrice'), slotName: 'outputPrice', width: 110 },
   { title: t('settingPage.pricing.colCachedPrice'), dataIndex: 'cached_price', width: 110 },
-  { title: t('settingPage.pricing.colRequestPrice'), dataIndex: 'per_request_price', width: 110 },
+  { title: t('settingPage.pricing.colRequestPrice'), slotName: 'requestPrice', width: 110 },
   { title: t('settingPage.pricing.colBilling'), slotName: 'billing', width: 90 },
   { title: t('settingPage.pricing.colAction'), slotName: 'actions', width: 160, fixed: 'right' },
 ])
@@ -197,11 +215,13 @@ const fbForm = reactive({ input_price: 0, output_price: 0, cached_price: 0, per_
 async function loadData() {
   loading.value = true
   try {
-    const [mp, gp, fb] = await Promise.all([
+    const [mp, gp, fb, catalog] = await Promise.all([
       api.get('/api/model_price/'),
       api.get('/api/group_price/'),
       api.get('/api/model_price/fallback'),
+      api.get('/api/model/options', { params: { scope: 'all' } }),
     ])
+    if (catalog.data.success) modelMetadata.value = catalog.data.data || []
     const mpList = Array.isArray(mp.data.data) ? mp.data.data : mp.data.data?.items || []
     // 兜底价（*）在独立的「兜底价格」tab 里配置，不出现在普通模型定价列表。
     modelPrices.value = mpList.filter((r) => r.model_name !== '*')
@@ -253,6 +273,9 @@ onMounted(() => { loadData() })
 </script>
 
 <style scoped>
+.price-unit-note { margin-bottom: 16px; }
+small { color: var(--color-text-3); }
+.category-filter { width: 220px; max-width: 100%; margin-bottom: 16px; }
 .setting-container { width: 100%; padding: 4px 0; }
 .fallback-tip { margin-bottom: 16px; }
 .fallback-form { max-width: 560px; }

@@ -162,14 +162,7 @@
               <span />
             </div>
             <div v-for="(row, idx) in limitRows" :key="idx" class="limits-row">
-              <a-select
-                v-model="row.model"
-                :placeholder="$t('settingPage.plan.modelLimitsModelPlaceholder')"
-                allow-search
-                allow-clear
-              >
-                <a-option v-for="m in modelOptions" :key="m" :value="m" :label="m" />
-              </a-select>
+              <GroupedModelSelect v-model="row.model" :options="modelOptions" :metadata="modelMetadata" :placeholder="$t('settingPage.plan.modelLimitsModelPlaceholder')" allow-search allow-clear />
               <a-select v-model="row.periodH">
                 <a-option
                   v-for="h in periodHOptions"
@@ -213,6 +206,7 @@ import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import { IconPlus, IconDelete } from '@arco-design/web-vue/es/icon'
 import api from '@/api'
+import GroupedModelSelect from '@/components/GroupedModelSelect.vue'
 import {
   sanitizeFeaturesList,
   featuresFromRecord,
@@ -229,7 +223,7 @@ import {
   validateLimitRows,
 } from '@/utils/plan_limits'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 // formatAmount 金额显示：保留两位小数。
 // 套餐额度由后端以「元」返回，前端不做任何 1e6 换算。
@@ -270,6 +264,7 @@ const formFeatures = ref(buildEmptyFeaturesForm())
 // 作者: opencode
 const limitRows = ref([])
 const modelOptions = ref([])
+const modelMetadata = ref([])
 
 // periodHOptions 窗口小时数下拉选项（1-24 小时）。
 const periodHOptions = computed(() => Array.from({ length: MAX_PERIOD_H }, (_, i) => i + MIN_PERIOD_H))
@@ -316,8 +311,9 @@ function removeLimitRow(idx) {
 // 作者: opencode
 async function fetchModelOptions() {
   try {
-    const { data } = await api.get('/api/model_price/options')
-    const list = Array.isArray(data?.data) ? data.data : []
+    const [prices, catalog] = await Promise.all([api.get('/api/model_price/options'), api.get('/api/model/options', { params: { scope: 'all' } })])
+    modelMetadata.value = catalog.data.success ? catalog.data.data || [] : []
+    const list = [...(Array.isArray(prices.data?.data) ? prices.data.data : []), ...modelMetadata.value.map(item => item.model_name)]
     modelOptions.value = Array.from(new Set(list.filter((m) => typeof m === 'string' && m))).sort()
   } catch (e) { /* ignore */ }
 }

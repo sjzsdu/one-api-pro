@@ -13,8 +13,8 @@ import (
 
 	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
-	"github.com/modelbus/one-api-pro/common/helper"
 	"github.com/modelbus/one-api-pro/common/logger"
+	"github.com/modelbus/one-api-pro/common/random"
 	"github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/relay"
 	adaptorpkg "github.com/modelbus/one-api-pro/relay/adaptor"
@@ -104,7 +104,7 @@ func getImageCostRatio(imageRequest *relaymodel.ImageRequest) (float64, error) {
 // RelayImageHelper settles images only after successful response normalization.
 // 版本: v0.0.28
 // 日期: 2026-11-23
-func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatusCode {
+func RelayImageHelper(c *gin.Context, relayMode int) (outErr *relaymodel.ErrorWithStatusCode) {
 	ctx := c.Request.Context()
 	meta := meta.GetByContext(c)
 	imageRequest, err := getImageRequest(c, meta.Mode)
@@ -150,15 +150,33 @@ func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 		quota = int64(float64(quota) * imageCostRatio * float64(imageRequest.N))
 	}
 
-	if meta.PlanId == 0 {
-		userQuota, err := model.CacheGetUserQuota(ctx, meta.UserId)
-		if err != nil {
-			return openai.ErrorWrapper(err, "get_user_quota_failed", http.StatusInternalServerError)
-		}
-		if userQuota-quota < 0 {
-			return openai.ErrorWrapper(errors.New("user quota is not enough"), "insufficient_user_quota", http.StatusForbidden)
-		}
+	if priceResult.InputPrice == 0 && priceResult.OutputPrice == 0 && priceResult.PerRequestPrice == 0 {
+		quota = 0
 	}
+	snapshot, _ := json.Marshal(map[string]any{"price": priceResult, "discount": groupDiscount})
+	reservationKey := "image:" + random.GetUUID()
+	if reserveErr := model.ReserveInference(ctx, model.InferenceReservation{Key: reservationKey, UserID: meta.UserId, TokenID: meta.TokenId, PlanID: meta.PlanId, ChannelID: meta.ChannelId, ModelName: meta.OriginModelName, Quota: quota, PriceSnapshot: string(snapshot)}); reserveErr != nil {
+		return openai.ErrorWrapper(reserveErr, "insufficient_quota", 403)
+	}
+	c.Header("X-Inference-Id", reservationKey)
+	c.Header("x-should-retry", "false")
+	finalized := false
+	submitted, rejected := false, false
+	defer func() {
+		if !finalized {
+			if submitted && !rejected {
+				cause := errors.New("image result could not be confirmed")
+				if outErr != nil {
+					cause = errors.New(outErr.Message)
+				}
+				outErr = pendingInferenceError(c, reservationKey, cause, "image_outcome_unknown")
+				return
+			}
+			if err := model.RefundInference(context.WithoutCancel(ctx), reservationKey); err != nil {
+				logger.Errorf(ctx, "image refund pending: %v", err)
+			}
+		}
+	}()
 
 	var requestBody io.Reader
 	if isModelMapped || meta.ChannelID == "azure" {
@@ -193,6 +211,7 @@ func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 		requestBody = bytes.NewBuffer(jsonStr)
 	}
 
+	submitted = true
 	resp, err := adaptor.DoRequest(c, meta, requestBody)
 	if err != nil {
 		logger.Errorf(ctx, "DoRequest failed: %s", err.Error())
@@ -200,103 +219,51 @@ func RelayImageHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		rejected = relaymodel.RejectedHTTPStatus(resp.StatusCode)
 		return RelayErrorHandler(resp)
 	}
-	imageSucceeded := false
-	defer func(ctx context.Context) {
-		if !imageSucceeded {
-			return
-		}
-		if resp != nil &&
-			resp.StatusCode != http.StatusCreated &&
-			resp.StatusCode != http.StatusOK {
-			return
-		}
-
-		if meta.PlanId > 0 {
-			now := helper.GetTimestamp()
-			ups, upsErr := model.CacheGetUserActivePlans(meta.UserId)
-			if upsErr == nil {
-				for _, up := range ups {
-					if int(up.Id) != meta.PlanId {
-						continue
-					}
-					// 套餐配置优先取实时值，plans 行已删时回退到购买快照。
-					limits, limitsErr := up.EffectiveModelLimits()
-					if limitsErr != nil {
-						logger.SysError("failed to parse plan model limits: " + limitsErr.Error())
-						break
-					}
-					rule, found := model.FindLimit(limits, meta.OriginModelName)
-					if !found {
-						break
-					}
-					for _, windowType := range []string{model.WindowTypePeriod, model.WindowTypeWeek, model.WindowTypeMonth} {
-						windowIndex := model.CalcWindowIndex(now, up.StartTime, windowType, rule.PeriodH)
-						_ = model.IncrementPlanUsage(int(up.Id), meta.OriginModelName, windowType, windowIndex, 1, 0, 0, 0)
-					}
-					// 订阅虚拟余额：累加本次消费额度（微元）。
-					if err := model.IncrementUserPlanUsedAmount(int(up.Id), quota); err != nil {
-						logger.SysError("failed to increment plan used amount: " + err.Error())
-					}
-					break
-				}
-			}
-			// 订阅消费计入用户 used_quota / request_count，但不扣余额。
-			model.UpdateUserUsedQuotaAndRequestCount(meta.UserId, quota)
-		} else {
-			err := model.PostConsumeTokenQuota(meta.TokenId, quota)
-			if err != nil {
-				logger.SysError("error consuming token remain quota: " + err.Error())
-			}
-			err = model.CacheUpdateUserQuota(ctx, meta.UserId)
-			if err != nil {
-				logger.SysError("error update user quota cache: " + err.Error())
-			}
-			model.UpdateUserUsedQuotaAndRequestCount(meta.UserId, quota)
-		}
-		channelId := c.GetInt(ctxkey.ChannelId)
-		model.UpdateChannelUsedQuota(channelId, quota)
-		if quota != 0 {
-			tokenName := c.GetString(ctxkey.TokenName)
-			logContent := fmt.Sprintf("按次计费：¥%.6f/次", priceResult.PerRequestPrice)
-			if priceResult.BillingType == model.BillingTypeToken {
-				logContent = fmt.Sprintf("定价：输入¥%.6f/百万tokens × 1", priceResult.InputPrice)
-			}
-			if groupDiscount != 1.0 {
-				logContent += fmt.Sprintf(" × 分组折扣%.2f", groupDiscount)
-			}
-			if meta.PlanId > 0 {
-				logContent = fmt.Sprintf("订阅计费 | %s", logContent)
-			}
-			model.RecordConsumeLog(ctx, &model.Log{
-				UserId:            meta.UserId,
-				ChannelId:         meta.ChannelId,
-				PromptTokens:      0,
-				CompletionTokens:  0,
-				CachedTokens:      0,
-				ModelName:         meta.OriginModelName,
-				ResponseModelName: meta.ActualModelName,
-				TokenName:         tokenName,
-				Quota:             int(quota),
-				Content:           logContent,
-				BillingSource: func() int {
-					if meta.PlanId > 0 {
-						return 1
-					}
-					return 0
-				}(),
-				PlanId: meta.PlanId,
-			})
-		}
-	}(c.Request.Context())
-
+	originalWriter := c.Writer
+	buffered := newBufferedInferenceResponse(originalWriter)
+	c.Writer = buffered
 	_, respErr := adaptor.DoResponse(c, resp, meta)
+	c.Writer = originalWriter
 	if respErr != nil {
-		logger.Errorf(ctx, "respErr is not nil: %+v", respErr)
 		return respErr
 	}
+	var output openai.ImageResponse
+	if json.Unmarshal(buffered.body.Bytes(), &output) != nil || len(output.Data) == 0 {
+		return openai.ErrorWrapper(errors.New("invalid image response or result count"), "invalid_image_response", 502)
+	}
+	if priceResult.BillingType == model.BillingTypePerRequest {
+		quota = billingratio.CalculatePerRequestQuota(priceResult.PerRequestPrice, imageCostRatio, len(output.Data), groupDiscount)
+	} else if imageRequest.N > 0 {
+		quota = quota / int64(imageRequest.N) * int64(len(output.Data))
+	}
+	if priceResult.InputPrice == 0 && priceResult.OutputPrice == 0 && priceResult.PerRequestPrice == 0 {
+		quota = 0
+	}
+	metrics := []relaymodel.UsageMetric{{Metric: "image.generated", Quantity: int64(len(output.Data)), Scale: 1, Unit: "image"}}
+	usage, _ := json.Marshal(metrics)
+	finalized = true
+	if settleErr := model.SettleInference(context.WithoutCancel(ctx), reservationKey, quota, string(usage)); settleErr != nil {
+		if pendingErr := model.RecordInferenceSettlementRetry(context.WithoutCancel(ctx), reservationKey, quota, string(usage)); pendingErr != nil {
+			logger.Errorf(ctx, "exact image charge persistence failed: %v", pendingErr)
+		}
+		recordPendingResult(ctx, reservationKey, string(usage), buffered.body.String(), "settlement_pending")
+		c.Header("X-Inference-Id", reservationKey)
+		c.Header("X-Inference-Status", "settlement_pending")
+		c.Header("x-should-retry", "false")
+	}
+	if quota != 0 {
+		model.RecordConsumeLog(ctx, &model.Log{UserId: meta.UserId, ChannelId: meta.ChannelId, ModelName: meta.OriginModelName, ResponseModelName: meta.ActualModelName, TokenName: c.GetString(ctxkey.TokenName), Quota: int(quota), Content: fmt.Sprintf("图片计费：%d张 × 分组折扣%.2f", len(output.Data), groupDiscount), PlanId: meta.PlanId})
+	}
+	for k, v := range buffered.Header() {
+		for _, value := range v {
+			c.Writer.Header().Add(k, value)
+		}
+	}
+	c.Header("X-Inference-Id", reservationKey)
+	c.Data(buffered.status, "application/json", buffered.body.Bytes())
 
-	imageSucceeded = true
 	return nil
 }

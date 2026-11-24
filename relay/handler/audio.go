@@ -25,11 +25,11 @@ import (
 	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"github.com/modelbus/one-api-pro/common/helper"
 	"github.com/modelbus/one-api-pro/common/logger"
+	"github.com/modelbus/one-api-pro/common/random"
 	"github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/relay"
 	adaptorpkg "github.com/modelbus/one-api-pro/relay/adaptor"
 	"github.com/modelbus/one-api-pro/relay/adaptor/openai"
-	"github.com/modelbus/one-api-pro/relay/billing"
 	billingratio "github.com/modelbus/one-api-pro/relay/billing/ratio"
 	"github.com/modelbus/one-api-pro/relay/meta"
 	"github.com/modelbus/one-api-pro/relay/relaymode"
@@ -39,7 +39,7 @@ import (
 // RelayAudioHelper relays audio with failure refunds and explicit speech usage.
 // 版本: v0.0.28
 // 日期: 2026-11-23
-func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatusCode {
+func RelayAudioHelper(c *gin.Context, relayMode int) (outErr *relaymodel.ErrorWithStatusCode) {
 	ctx := c.Request.Context()
 	meta := meta.GetByContext(c)
 	audioModel := "whisper-1"
@@ -76,6 +76,7 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 	// 转写 / 翻译两种模式不接适配器，始终走透传。
 	var speechAdaptor adaptorpkg.Adaptor
 	useNativeSpeech := false
+	nativeTokenSpeech := false
 	if relayMode == relaymode.AudioSpeech {
 		if candidate := relay.GetAdaptorByChannelID(meta.ChannelID); candidate != nil {
 			if _, ok := candidate.(adaptorpkg.AudioSpeechRequester); ok {
@@ -101,6 +102,9 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 		}
 	}
 
+	if meter, ok := speechAdaptor.(adaptorpkg.AudioSpeechTokenMeter); ok {
+		nativeTokenSpeech = meter.SpeechUsesTokens(audioModel)
+	}
 	meta.ActualModelName = audioModel
 
 	priceResult, err := billingratio.GetModelPrice(audioModel, originAudioModel)
@@ -110,7 +114,17 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 	groupDiscount := billingratio.GetGroupDiscount(group, audioModel, originAudioModel)
 
 	var quota int64
-	var preConsumedQuota int64
+	snapshot, _ := json.Marshal(map[string]any{"price": priceResult, "discount": groupDiscount})
+	reservationKey := "audio:" + random.GetUUID()
+	reserveQuota := func(amount int64) (int64, *relaymodel.ErrorWithStatusCode) {
+		err := model.ReserveInference(ctx, model.InferenceReservation{Key: reservationKey, UserID: userId, TokenID: tokenId, PlanID: meta.PlanId, ChannelID: channelId, ModelName: originAudioModel, Quota: amount, PriceSnapshot: string(snapshot)})
+		if err != nil {
+			return 0, openai.ErrorWrapper(err, "insufficient_quota", 403)
+		}
+		return amount, nil
+	}
+	var transcriptionTokens int
+
 	var bizErr *relaymodel.ErrorWithStatusCode
 	if priceResult.BillingType == model.BillingTypePerRequest {
 		// per_request：按次计费，费用在请求前已完全确定，精确预扣。
@@ -118,36 +132,49 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 		// per_request: flat price known upfront — pre-consume the exact amount
 		// so the settlement delta is 0 and the balance cannot go negative.
 		quota = billingratio.CalculatePerRequestQuota(priceResult.PerRequestPrice, 1, 1, groupDiscount)
-		preConsumedQuota, bizErr = preConsumeExactQuota(ctx, quota, meta)
+		if priceResult.PerRequestPrice == 0 {
+			quota = 0
+		}
+		_, bizErr = reserveQuota(quota)
 	} else {
 		switch relayMode {
 		case relaymode.AudioSpeech:
 			quota = speechCharacterQuota(utf8.RuneCountInString(ttsRequest.Input), priceResult.InputPrice, groupDiscount)
 			reservation := quota
-			if useNativeSpeech && (priceResult.InputPrice > 0 || priceResult.OutputPrice > 0) {
+			if useNativeSpeech && nativeTokenSpeech && (priceResult.InputPrice > 0 || priceResult.OutputPrice > 0) {
 				reservation = speechTokenQuota(openai.CountTokenText(ttsRequest.Input, audioModel), 0, priceResult.InputPrice, priceResult.OutputPrice, groupDiscount) + config.PreConsumedQuota
 			}
-			preConsumedQuota, bizErr = preConsumeAmount(ctx, reservation, meta)
+			_, bizErr = reserveQuota(reservation)
 		default:
 			// PreConsumedQuota 是「额外预留的额度（微元）」，不是 token 数，
 			// 不再乘 ratio（历史实现把它当 token 数会放大 ratio 倍）。
 			// PreConsumedQuota is an extra reserved quota in micro-quota, not a token count.
-			preConsumedQuota, bizErr = preConsumeAmount(ctx, config.PreConsumedQuota, meta)
+			_, bizErr = reserveQuota(config.PreConsumedQuota)
 		}
 	}
 	if bizErr != nil {
 		return bizErr
 	}
+	c.Header("X-Inference-Id", reservationKey)
+	c.Header("x-should-retry", "false")
 	succeed := false
+	submitted, rejected := false, false
 	defer func() {
 		if succeed {
 			return
 		}
-		if preConsumedQuota > 0 {
-			if refundErr := billing.ReturnPreConsumedQuotaSync(ctx, preConsumedQuota, tokenId, userId); refundErr != nil {
-				logger.Errorf(ctx, "error rollback pre-consumed audio quota: %v", refundErr)
+		if submitted && !rejected {
+			cause := errors.New("audio result could not be confirmed")
+			if outErr != nil {
+				cause = errors.New(outErr.Message)
 			}
+			outErr = pendingInferenceError(c, reservationKey, cause, "audio_outcome_unknown")
+			return
 		}
+		if refundErr := model.RefundInference(context.WithoutCancel(ctx), reservationKey); refundErr != nil {
+			logger.Errorf(ctx, "audio refund pending: %v", refundErr)
+		}
+
 	}()
 
 	baseURL := meta.BaseURL
@@ -166,6 +193,7 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 
 	var resp *http.Response
 	if useNativeSpeech {
+		submitted = true
 		resp, err = speechAdaptor.DoRequest(c, meta, bytes.NewReader(nativeBody))
 		if err != nil {
 			logger.Errorf(ctx, "native TTS DoRequest failed: %s", err.Error())
@@ -198,6 +226,7 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 		req.Header.Set("Content-Type", c.Request.Header.Get("Content-Type"))
 		req.Header.Set("Accept", c.Request.Header.Get("Accept"))
 
+		submitted = true
 		resp, err = client.HTTPClient.Do(req)
 		if err != nil {
 			return openai.ErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
@@ -210,6 +239,7 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 			return openai.ErrorWrapper(closeErr, "close_request_body_failed", http.StatusInternalServerError)
 		}
 	}
+	rejected = relaymodel.RejectedHTTPStatus(resp.StatusCode)
 
 	if relayMode != relaymode.AudioSpeech {
 		responseBody, err := io.ReadAll(resp.Body)
@@ -255,8 +285,9 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 			// 与 CalculateTokenQuota 保持一致：math.Round 取整 + 最小 1 微元兜底，
 			// 避免极短转写文本（或空文本）导致 0 扣费。
 			tokens := openai.CountTokenText(text, audioModel)
+			transcriptionTokens = tokens
 			quota = int64(math.Round(float64(tokens) * priceResult.InputPrice / billingratio.Million * config.QuotaPerUnit * groupDiscount))
-			if quota <= 0 && tokens > 0 {
+			if quota <= 0 && tokens > 0 && priceResult.InputPrice > 0 {
 				quota = 1
 			}
 		}
@@ -266,7 +297,7 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 		return RelayErrorHandler(resp)
 	}
 
-	var billedInput, billedOutput int
+	billedInput, billedOutput := transcriptionTokens, 0
 	billingUnit := ""
 	if relayMode == relaymode.AudioSpeech {
 		billedInput = utf8.RuneCountInString(ttsRequest.Input)
@@ -315,34 +346,25 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 		return openai.ErrorWrapper(err, "close_response_body_failed", http.StatusInternalServerError)
 	}
 	succeed = true
-	quotaDelta := quota - preConsumedQuota
-	defer func(ctx context.Context) {
-		// 订阅用户：消耗套餐额度而非全局余额。历史实现让音频请求完全绕过
-		// 订阅链路，导致订阅用户的余额被真实扣减。
-		// Subscription users burn plan quota instead of account balance.
-		if meta.PlanId > 0 {
-			applyAudioSubscriptionConsume(ctx, meta, quota, originAudioModel, tokenName)
-			return
+	metrics := []relaymodel.UsageMetric{{Metric: "text.input_tokens", Quantity: int64(billedInput), Scale: 1, Unit: "token"}, {Metric: "text.output_tokens", Quantity: int64(billedOutput), Scale: 1, Unit: "token"}}
+	if billingUnit == "characters" {
+		metrics = []relaymodel.UsageMetric{{Metric: "speech.characters", Quantity: int64(billedInput), Scale: 1, Unit: "character"}}
+	}
+	usage, _ := json.Marshal(metrics)
+	if settleErr := model.SettleInference(context.WithoutCancel(ctx), reservationKey, quota, string(usage)); settleErr != nil {
+		if pendingErr := model.RecordInferenceSettlementRetry(context.WithoutCancel(ctx), reservationKey, quota, string(usage)); pendingErr != nil {
+			logger.Errorf(ctx, "exact audio charge persistence failed: %v", pendingErr)
 		}
-		billing.PostConsumeQuota(ctx, &billing.ConsumeQuotaParams{
-			TokenId:          tokenId,
-			UserId:           userId,
-			ChannelId:        channelId,
-			QuotaDelta:       quotaDelta,
-			TotalQuota:       quota,
-			ModelName:        originAudioModel,
-			TokenName:        tokenName,
-			InputPrice:       priceResult.InputPrice,
-			OutputPrice:      priceResult.OutputPrice,
-			CachedPrice:      priceResult.CachedPrice,
-			PerRequestPrice:  priceResult.PerRequestPrice,
-			GroupDiscount:    groupDiscount,
-			PromptTokens:     billedInput,
-			CompletionTokens: billedOutput,
-			BillingUnit:      billingUnit,
-			BillingType:      priceResult.BillingType,
-		})
-	}(c.Request.Context())
+		recordPendingResult(ctx, reservationKey, string(usage), "", "settlement_pending")
+		c.Header("x-should-retry", "false")
+		// Audio has already been delivered. A ledger retry must not turn the
+		// successful provider response into a client generation retry.
+		return nil
+	}
+	if quota != 0 {
+		content := fmt.Sprintf("推理计费：%s | 输入¥%.6f/百万单位 × %d + 输出¥%.6f/百万单位 × %d × 分组折扣%.2f", billingUnit, priceResult.InputPrice, billedInput, priceResult.OutputPrice, billedOutput, groupDiscount)
+		model.RecordConsumeLog(ctx, &model.Log{UserId: userId, ChannelId: channelId, ModelName: originAudioModel, ResponseModelName: audioModel, TokenName: tokenName, Quota: int(quota), PromptTokens: billedInput, CompletionTokens: billedOutput, Content: content, PlanId: meta.PlanId})
+	}
 
 	return nil
 }

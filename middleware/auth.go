@@ -177,6 +177,9 @@ func TokenAuth() func(c *gin.Context) {
 }
 
 func shouldCheckModel(c *gin.Context) bool {
+	if c.Request.URL.Path == "/v1/realtime" || c.Request.URL.Path == "/v1/rerank" || c.Request.URL.Path == "/v1/media/jobs" {
+		return true
+	}
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/completions") {
 		return true
 	}

@@ -2,11 +2,13 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/modelbus/one-api-pro/common/helper"
 	"github.com/modelbus/one-api-pro/relay/constant/role"
@@ -18,6 +20,7 @@ import (
 	"github.com/modelbus/one-api-pro/common/logger"
 	dbmodel "github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/relay/adaptor/openai"
+	"github.com/modelbus/one-api-pro/relay/billing"
 	billingratio "github.com/modelbus/one-api-pro/relay/billing/ratio"
 	"github.com/modelbus/one-api-pro/relay/handler/validator"
 	"github.com/modelbus/one-api-pro/relay/meta"
@@ -118,6 +121,14 @@ func preConsumeExactQuota(ctx context.Context, preConsumedQuota int64, meta *met
 // preConsumeAmount 对已计算好的预扣额度执行统一守卫与落库：余额不足 → 403；
 // 余额足够大（100×）→ 免预扣；否则正常预扣，失败时回滚。
 func preConsumeAmount(ctx context.Context, preConsumedQuota int64, meta *meta.Meta) (int64, *relaymodel.ErrorWithStatusCode) {
+	if meta.ReservationKey != "" {
+		err := dbmodel.ReserveInference(ctx, dbmodel.InferenceReservation{Key: meta.ReservationKey, UserID: meta.UserId, TokenID: meta.TokenId, PlanID: meta.PlanId, ChannelID: meta.ChannelId, ModelName: meta.OriginModelName, Quota: preConsumedQuota})
+		if err != nil {
+			return 0, openai.ErrorWrapper(err, "reserve_inference_failed", http.StatusForbidden)
+		}
+		return preConsumedQuota, nil
+	}
+
 	if meta.PlanId > 0 {
 		return 0, nil
 	}
@@ -162,16 +173,27 @@ func preConsumeAmount(ctx context.Context, preConsumedQuota int64, meta *meta.Me
 	return preConsumedQuota, nil
 }
 
-func postConsumeQuota(ctx context.Context, usage *relaymodel.Usage, meta *meta.Meta, textRequest *relaymodel.GeneralOpenAIRequest, preConsumedQuota int64, priceResult *billingratio.PriceResult, groupDiscount float64, systemPromptReset bool) {
+func postConsumeQuota(ctx context.Context, usage *relaymodel.Usage, meta *meta.Meta, textRequest *relaymodel.GeneralOpenAIRequest, preConsumedQuota int64, priceResult *billingratio.PriceResult, groupDiscount float64, systemPromptReset bool) error {
 	if usage == nil {
-		logger.Error(ctx, "usage is nil, which is unexpected")
-		return
+		if meta.ReservationKey != "" && priceResult.BillingType == dbmodel.BillingTypePerRequest {
+			usage = &relaymodel.Usage{}
+		} else {
+			logger.Error(ctx, "usage is nil, which is unexpected")
+			if meta.ReservationKey != "" {
+				return errors.New("missing upstream usage")
+			}
+			return nil
+		}
 	}
 	promptTokens := usage.PromptTokens
 	completionTokens := usage.CompletionTokens
 	cachedTokens := 0
 	if usage.PromptTokensDetails != nil {
 		cachedTokens = usage.PromptTokensDetails.CachedTokens
+	}
+
+	if meta.ReservationKey != "" && (promptTokens < 0 || completionTokens < 0 || cachedTokens < 0 || cachedTokens > promptTokens) {
+		return errors.New("invalid upstream token usage")
 	}
 
 	var quota int64
@@ -186,13 +208,14 @@ func postConsumeQuota(ctx context.Context, usage *relaymodel.Usage, meta *meta.M
 	}
 
 	// A zero-token usage means the upstream reported no billable token usage
-	// (e.g. an empty/aborted stream). For token billing there is nothing to
+	// (a completed empty response). Interrupted keyed streams with unknown usage
+	// are held for reconciliation by the caller. For token billing there is nothing to
 	// charge, so zero the quota out. per_request billing is a flat per-call
 	// price that does not depend on tokens — zeroing it here would silently
 	// refund the exact amount pre-consumed in RelayTextHelper and make the
 	// call free, so it must be exempted.
 	//
-	// usage 为 0 token 表示上游未上报可计费 token（空响应/中断流）。token 计费
+	// usage 为 0 token 表示上游未上报可计费 token（完整空响应；中断且未知用量的流由调用方保留待对账）。token 计费
 	// 下无费用可收，置 0 合理；per_request 是「每次固定价」，与 token 无关，
 	// 置 0 会把精确预扣的按次费用全额退回，因此必须豁免。
 	if priceResult.BillingType != dbmodel.BillingTypePerRequest {
@@ -201,9 +224,47 @@ func postConsumeQuota(ctx context.Context, usage *relaymodel.Usage, meta *meta.M
 		}
 	}
 
+	if meta.ReservationKey != "" && priceResult.BillingType != dbmodel.BillingTypePerRequest && priceResult.InputPrice == 0 && priceResult.OutputPrice == 0 && priceResult.CachedPrice == 0 {
+		quota = 0
+	}
 	planId := meta.PlanId
 	billingSource := 0
 	if planId > 0 {
+		billingSource = 1
+	}
+	if meta.ReservationKey != "" {
+		metrics := []relaymodel.UsageMetric{{Metric: "text.input_tokens", Quantity: int64(promptTokens), Unit: "token", Scale: 1}, {Metric: "text.output_tokens", Quantity: int64(completionTokens), Unit: "token", Scale: 1}, {Metric: "text.cached_tokens", Quantity: int64(cachedTokens), Unit: "token", Scale: 1}}
+		if meta.PartialResponse {
+			metrics = append(metrics, relaymodel.UsageMetric{Metric: "gateway.partial_response", Quantity: 1, Unit: "request", Scale: 1})
+		}
+		encoded, err := json.Marshal(metrics)
+		if err != nil {
+			return err
+		}
+		var prior dbmodel.InferenceSettlement
+		priorCtx, cancelPrior := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		err = dbmodel.DB.WithContext(priorCtx).Where(map[string]any{"key": meta.ReservationKey}).First(&prior).Error
+		cancelPrior()
+		if err != nil {
+			// This read only suppresses duplicate informational logs. Failure
+			// cannot discard the already known monetary settlement intent.
+			if pendingErr := dbmodel.RecordInferenceSettlementRetry(context.WithoutCancel(ctx), meta.ReservationKey, quota, string(encoded)); pendingErr != nil {
+				return errors.Join(err, pendingErr)
+			}
+			return err
+		}
+		if err = dbmodel.SettleInference(context.WithoutCancel(ctx), meta.ReservationKey, quota, string(encoded)); err != nil {
+			if pendingErr := dbmodel.RecordInferenceSettlementRetry(context.WithoutCancel(ctx), meta.ReservationKey, quota, string(encoded)); pendingErr != nil {
+				return errors.Join(err, pendingErr)
+			}
+			return err
+		}
+		// The ledger owns all account, subscription, and statistic mutations.
+		// Replayed finalization must not repeat the old charge or informational log.
+		if prior.Status == "settled" {
+			return nil
+		}
+	} else if planId > 0 {
 		billingSource = 1
 		now := helper.GetTimestamp()
 		ups, err := dbmodel.CacheGetUserActivePlans(meta.UserId)
@@ -299,8 +360,35 @@ func postConsumeQuota(ctx context.Context, usage *relaymodel.Usage, meta *meta.M
 	// 订阅消费同样计入用户的 used_quota / request_count（统计口径统一），
 	// 但不扣减 users.quota —— 套餐额度消耗记在 user_plans.used_amount 上。
 	// Subscription usage is counted into user stats but never charged to users.quota.
-	dbmodel.UpdateUserUsedQuotaAndRequestCount(meta.UserId, quota)
-	dbmodel.UpdateChannelUsedQuota(meta.ChannelId, quota)
+	if meta.ReservationKey == "" {
+		dbmodel.UpdateUserUsedQuotaAndRequestCount(meta.UserId, quota)
+		dbmodel.UpdateChannelUsedQuota(meta.ChannelId, quota)
+	}
+	return nil
+}
+
+// refundRequestQuota releases a failed attempt synchronously before provider retry.
+// 版本: v0.0.28
+// 日期: 2026-11-23
+func refundRequestQuota(ctx context.Context, m *meta.Meta, quota int64) error {
+	if m.ReservationKey != "" {
+		return dbmodel.RefundInference(context.WithoutCancel(ctx), m.ReservationKey)
+	}
+	return billing.ReturnPreConsumedQuotaSync(ctx, quota, m.TokenId, m.UserId)
+}
+
+// recordPendingTextUsage preserves observed output and prices when accounting is unresolved.
+// 版本: v0.0.28
+// 日期: 2026-11-23
+func recordPendingTextUsage(ctx context.Context, m *meta.Meta, usage *relaymodel.Usage, price *billingratio.PriceResult, reason string) error {
+	if m.ReservationKey == "" {
+		return nil
+	}
+	encoded, err := json.Marshal(map[string]any{"state": "settlement_pending", "reason": reason, "partial_response": m.PartialResponse, "observed_usage": usage, "price_snapshot": price})
+	if err != nil {
+		return err
+	}
+	return dbmodel.RecordInferencePending(context.WithoutCancel(ctx), m.ReservationKey, string(encoded), "", reason)
 }
 
 func getMappedModelName(modelName string, mapping map[string]string) (string, bool) {

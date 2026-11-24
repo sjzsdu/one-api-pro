@@ -92,6 +92,11 @@ func Relay(c *gin.Context) {
 	if c.Writer.Written() {
 		return
 	}
+	if model.ExecutionMayHaveSucceeded(bizErr) {
+		c.Header("x-should-retry", "false")
+		c.JSON(bizErr.StatusCode, gin.H{"error": bizErr.Error})
+		return
+	}
 	lastFailedChannelId := channelId
 	channelName := c.GetString(ctxkey.ChannelName)
 	group := c.GetString(ctxkey.Group)
@@ -161,6 +166,11 @@ func Relay(c *gin.Context) {
 		if c.Writer.Written() {
 			return
 		}
+		if model.ExecutionMayHaveSucceeded(bizErr) {
+			c.Header("x-should-retry", "false")
+			c.JSON(bizErr.StatusCode, gin.H{"error": bizErr.Error})
+			return
+		}
 		lastFailedChannelId = ch.Id
 		channelName = ch.Name
 
@@ -215,28 +225,16 @@ func Relay(c *gin.Context) {
 }
 
 func routeChannel(c *gin.Context, group, modelName string, userId int, ignoreFirstPriority bool, excludedChannelId int) (*dbmodel.Channel, error) {
-	if channelrouter.DefaultRouter == nil {
-		return dbmodel.CacheGetRandomSatisfiedChannel(group, modelName, ignoreFirstPriority)
-	}
-
-	candidates := dbmodel.GetChannelCandidates(group, modelName)
+	candidates := middleware.OperationChannelCandidates(c, group, modelName)
 	if len(candidates) == 0 {
-		return dbmodel.CacheGetRandomSatisfiedChannel(group, modelName, ignoreFirstPriority)
+		return nil, fmt.Errorf("no channel supports requested operation")
 	}
-
-	req := &channelrouter.RouteRequest{
-		Group:               group,
-		Model:               modelName,
-		UserId:              userId,
-		IgnoreFirstPriority: ignoreFirstPriority,
-		ExcludedChannelId:   excludedChannelId,
+	req := &channelrouter.RouteRequest{Group: group, Model: modelName, UserId: userId, IgnoreFirstPriority: ignoreFirstPriority, ExcludedChannelId: excludedChannelId}
+	r := channelrouter.DefaultRouter
+	if r == nil {
+		r = channelrouter.NewChannelRouter()
 	}
-
-	ch, err := channelrouter.DefaultRouter.Route(c.Request.Context(), req, candidates)
-	if err != nil {
-		return dbmodel.CacheGetRandomSatisfiedChannel(group, modelName, ignoreFirstPriority)
-	}
-	return ch, nil
+	return r.Route(c.Request.Context(), req, candidates)
 }
 
 func requestFeaturesFromContext(c *gin.Context) *modelrouter.RequestFeatures {

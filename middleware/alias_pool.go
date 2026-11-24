@@ -325,6 +325,9 @@ func SelectAliasPoolChannel(c *gin.Context, group, name string, excluded map[int
 	channels := model.GetAliasPoolChannels(group, name)
 	remaining := []*model.Channel{}
 	for _, ch := range channels {
+		if channelOperationError(c, ch, name) != nil {
+			continue
+		}
 		if excluded[ch.Id] {
 			continue
 		}

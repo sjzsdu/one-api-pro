@@ -22,7 +22,7 @@ import (
 )
 
 func retryableAliasFailure(err *schema.ErrorWithStatusCode) bool {
-	if err == nil {
+	if err == nil || schema.ExecutionMayHaveSucceeded(err) {
 		return false
 	}
 	code := err.Error.Code
@@ -76,6 +76,9 @@ func relayAliasPool(c *gin.Context, mode int) {
 			if aliasResponseStarted(c) || c.Request.Context().Err() != nil {
 				return
 			}
+			if schema.ExecutionMayHaveSucceeded(failure) {
+				c.Header("x-should-retry", "false")
+			}
 			if !retryableAliasFailure(failure) {
 				break
 			}
@@ -99,6 +102,9 @@ func relayAliasPool(c *gin.Context, mode int) {
 		}
 		if failure == nil {
 			failure = &schema.ErrorWithStatusCode{StatusCode: http.StatusServiceUnavailable, Error: schema.Error{Message: "模型池没有可用渠道", Type: "server_error", Code: "alias_pool_unavailable"}}
+		}
+		if schema.ExecutionMayHaveSucceeded(failure) {
+			c.Header("x-should-retry", "false")
 		}
 		if !retryableAliasFailure(failure) {
 			break

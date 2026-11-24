@@ -34,9 +34,14 @@ type Meta struct {
 	PromptTokens       int // only for DoResponse
 	ForcedSystemPrompt string
 	StartTime          time.Time
-	PlanId              int    // UserPlan.Id if using subscription, 0 if using quota
-	BillingType         string // "request" or "token"
-	SessionKey          string
+	PlanId             int    // UserPlan.Id if using subscription, 0 if using quota
+	BillingType        string // "request" or "token"
+	SessionKey         string
+	// ReservationKey identifies one durable relay attempt independently of provider names.
+	// 版本: v0.0.28
+	// 日期: 2026-11-23
+	ReservationKey  string
+	PartialResponse bool
 }
 
 func GetByContext(c *gin.Context) *Meta {
@@ -55,9 +60,9 @@ func GetByContext(c *gin.Context) *Meta {
 		RequestURLPath:     c.Request.URL.String(),
 		ForcedSystemPrompt: c.GetString(ctxkey.SystemPrompt),
 		StartTime:          time.Now(),
-		PlanId:            c.GetInt(ctxkey.PlanId),
-		BillingType:       c.GetString(ctxkey.BillingType),
-		SessionKey:        c.GetString(ctxkey.SessionKey),
+		PlanId:             c.GetInt(ctxkey.PlanId),
+		BillingType:        c.GetString(ctxkey.BillingType),
+		SessionKey:         c.GetString(ctxkey.SessionKey),
 	}
 	cfg, ok := c.Get(ctxkey.Config)
 	if ok {

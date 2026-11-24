@@ -14,9 +14,7 @@
       <div v-for="(target, targetIndex) in row.targets" :key="targetIndex" class="candidate-row">
         <div class="candidate-fields">
           <a-form-item :label="t('target')" class="model-field">
-            <a-select v-if="!readonly" v-model="target.model" :aria-label="`${t('target')} ${index + 1}-${targetIndex + 1}`" allow-search :disabled="disabled" :placeholder="t('select')">
-              <a-option v-for="option in modelOptions" :key="option.value" :value="option.value" :label="option.label">{{ option.label }}</a-option>
-            </a-select>
+            <GroupedModelSelect v-if="!readonly" v-model="target.model" :options="modelOptions" :metadata="metadata" :aria-label="`${t('target')} ${index + 1}-${targetIndex + 1}`" allow-search :disabled="disabled" :placeholder="t('select')" />
             <span v-else class="model-name">{{ target.model }}</span>
           </a-form-item>
           <a-form-item :label="t('weight')" class="weight-field">
@@ -48,6 +46,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { buildModelAliasOptions } from '@/utils/modelAliases'
+import GroupedModelSelect from '@/components/GroupedModelSelect.vue'
 import messages from '@/i18n/pages/modelAliases'
 
 const props = defineProps({
@@ -56,7 +55,7 @@ const props = defineProps({
   readonly: Boolean, disabled: Boolean, canTest: Boolean, editorOnly: Boolean,
 })
 const emit = defineEmits(['test', 'remove'])
-const { t } = useI18n({ useScope: 'local', messages })
+const { t, locale } = useI18n({ useScope: 'local', messages })
 const modelOptions = computed(() => buildModelAliasOptions(props.targets, props.metadata, t('unknownProvider')))
 const aliasInput = ref(null)
 defineExpose({ focusAlias: () => aliasInput.value?.focus() })

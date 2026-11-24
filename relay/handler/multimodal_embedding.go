@@ -1,7 +1,7 @@
 // multimodal_embedding.go 通义原生多模态向量中继：请求/响应字节透传并复用现有计费与重试机制
 // Native DashScope multimodal embedding relay with byte-exact passthrough and shared billing/retry.
 // 版本: v0.0.28
-// 日期: 2026-11-19
+// 日期: 2026-11-23
 // 作者: opencode
 //
 // 设计约束：
@@ -30,11 +30,11 @@ import (
 	"github.com/modelbus/one-api-pro/common/config"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
 	"github.com/modelbus/one-api-pro/common/logger"
+	"github.com/modelbus/one-api-pro/common/random"
 	dbmodel "github.com/modelbus/one-api-pro/model"
 	"github.com/modelbus/one-api-pro/relay"
 	relayadaptor "github.com/modelbus/one-api-pro/relay/adaptor"
 	"github.com/modelbus/one-api-pro/relay/adaptor/openai"
-	"github.com/modelbus/one-api-pro/relay/billing"
 	billingratio "github.com/modelbus/one-api-pro/relay/billing/ratio"
 	"github.com/modelbus/one-api-pro/relay/meta"
 	relaymodel "github.com/modelbus/one-api-pro/relay/schema"
@@ -165,11 +165,14 @@ func RelayMultimodalEmbeddingHelper(c *gin.Context) *relaymodel.ErrorWithStatusC
 	promptTokens := estimateMultimodalPromptTokens(body)
 	m.PromptTokens = promptTokens
 
+	m.ReservationKey = "multimodal:" + random.GetUUID()
 	var preConsumedQuota int64
 	var bizErr *relaymodel.ErrorWithStatusCode
 	if priceResult.BillingType == dbmodel.BillingTypePerRequest {
 		exactQuota := billingratio.CalculatePerRequestQuota(priceResult.PerRequestPrice, 1, 1, groupDiscount)
 		preConsumedQuota, bizErr = preConsumeExactQuota(ctx, exactQuota, m)
+	} else if priceResult.InputPrice == 0 && priceResult.OutputPrice == 0 && priceResult.CachedPrice == 0 {
+		preConsumedQuota, bizErr = preConsumeExactQuota(ctx, 0, m)
 	} else {
 		ratio := (priceResult.InputPrice + priceResult.OutputPrice) / 2.0 / billingratio.Million * config.QuotaPerUnit
 		if ratio == 0 {
@@ -184,12 +187,16 @@ func RelayMultimodalEmbeddingHelper(c *gin.Context) *relaymodel.ErrorWithStatusC
 		return bizErr
 	}
 
+	c.Header("X-Inference-Id", m.ReservationKey)
 	// Distribute/SetupContextForSelectedChannel has already replaced the client
 	// Authorization header with the channel key. Build a fresh outbound request
 	// with only the headers we control — client credentials are never forwarded.
 	outReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(body))
 	if err != nil {
-		billing.ReturnPreConsumedQuota(ctx, preConsumedQuota, m.TokenId)
+		if refundErr := refundRequestQuota(ctx, m, preConsumedQuota); refundErr != nil {
+			_ = recordPendingTextUsage(ctx, m, nil, priceResult, "refund_failed")
+			return openai.ErrorWrapper(refundErr, "settlement_pending", http.StatusServiceUnavailable)
+		}
 		return openai.ErrorWrapper(err, "build_upstream_request_failed", http.StatusInternalServerError)
 	}
 	outReq.Header.Set("Content-Type", "application/json")
@@ -205,14 +212,20 @@ func RelayMultimodalEmbeddingHelper(c *gin.Context) *relaymodel.ErrorWithStatusC
 	resp, err := relayadaptor.DoRequest(c, outReq)
 	elapsed := time.Since(start)
 	if err != nil {
-		billing.ReturnPreConsumedQuota(ctx, preConsumedQuota, m.TokenId)
+		if refundErr := refundRequestQuota(ctx, m, preConsumedQuota); refundErr != nil {
+			_ = recordPendingTextUsage(ctx, m, nil, priceResult, "refund_failed")
+			return openai.ErrorWrapper(refundErr, "settlement_pending", http.StatusServiceUnavailable)
+		}
 		logger.Errorf(ctx, "multimodal embedding do_request_failed: model=%s channel_id=%d elapsed=%s err=%s",
 			actualModel, m.ChannelId, elapsed, err.Error())
 		return openai.ErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
 
 	if isErrorHappened(m, resp) {
-		billing.ReturnPreConsumedQuota(ctx, preConsumedQuota, m.TokenId)
+		if refundErr := refundRequestQuota(ctx, m, preConsumedQuota); refundErr != nil {
+			_ = recordPendingTextUsage(ctx, m, nil, priceResult, "refund_failed")
+			return openai.ErrorWrapper(refundErr, "settlement_pending", http.StatusServiceUnavailable)
+		}
 		bizErr := RelayErrorHandler(resp) // keeps the raw upstream message
 		logger.Errorf(ctx, "multimodal embedding upstream error: model=%s channel_id=%d status=%d elapsed=%s message=%s",
 			actualModel, m.ChannelId, bizErr.StatusCode, elapsed, truncateForLog(bizErr.Error.Message, 256))
@@ -222,8 +235,10 @@ func RelayMultimodalEmbeddingHelper(c *gin.Context) *relaymodel.ErrorWithStatusC
 	respBody, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
-		billing.ReturnPreConsumedQuota(ctx, preConsumedQuota, m.TokenId)
-		return openai.ErrorWrapper(err, "read_upstream_response_failed", http.StatusInternalServerError)
+		// A successful upstream response may already have incurred cost; preserve
+		// the hold when its usage cannot be read instead of retrying the request.
+		_ = recordPendingTextUsage(ctx, m, nil, priceResult, "upstream_response_read_failed")
+		return openai.ErrorWrapper(err, "outcome_unknown", http.StatusServiceUnavailable)
 	}
 
 	var responseMeta multimodalEmbeddingResponseMeta
@@ -240,7 +255,14 @@ func RelayMultimodalEmbeddingHelper(c *gin.Context) *relaymodel.ErrorWithStatusC
 		responseMeta.Usage.TotalTokens, elapsed, truncateForLog(requestID, 32))
 
 	// Settle before returning so a process restart cannot swallow the delta.
-	settleMultimodalEmbedding(ctx, m, &responseMeta, preConsumedQuota, priceResult, groupDiscount)
+	if err := settleMultimodalEmbedding(ctx, m, &responseMeta, preConsumedQuota, priceResult, groupDiscount); err != nil {
+		if errors.Is(err, errMultimodalUsageMissing) {
+			_ = recordPendingTextUsage(ctx, m, nil, priceResult, "multimodal_usage_missing")
+			return openai.ErrorWrapper(err, "usage_pending", http.StatusServiceUnavailable)
+		}
+		_ = recordPendingTextUsage(ctx, m, nil, priceResult, "multimodal_settlement_failed")
+		return openai.ErrorWrapper(errors.New("embedding billing awaiting reconciliation"), "settlement_pending", http.StatusServiceUnavailable)
+	}
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -256,9 +278,10 @@ func RelayMultimodalEmbeddingHelper(c *gin.Context) *relaymodel.ErrorWithStatusC
 	return nil
 }
 
-// settleMultimodalEmbedding charges the real upstream usage. When usage is
-// absent it either falls back to the flat per-request price or refunds the
-// whole pre-consume — it must never silently keep the pre-consumed amount.
+var errMultimodalUsageMissing = errors.New("embedding usage awaiting reconciliation")
+
+// settleMultimodalEmbedding charges observed usage or a known flat/free price.
+// Missing paid token usage retains its reservation for explicit reconciliation.
 func settleMultimodalEmbedding(
 	ctx context.Context,
 	m *meta.Meta,
@@ -266,23 +289,24 @@ func settleMultimodalEmbedding(
 	preConsumedQuota int64,
 	priceResult *billingratio.PriceResult,
 	groupDiscount float64,
-) {
+) error {
 	inputTokens := responseMeta.Usage.InputTokens + responseMeta.Usage.ImageTokens
 	totalTokens := responseMeta.Usage.TotalTokens
 	if totalTokens == 0 {
 		totalTokens = inputTokens
 	}
+	if inputTokens == 0 && totalTokens > 0 {
+		inputTokens = totalTokens
+	}
 	usage := &relaymodel.Usage{PromptTokens: inputTokens, TotalTokens: totalTokens}
 
 	if inputTokens == 0 && responseMeta.Usage.TotalTokens == 0 {
-		if priceResult.BillingType == dbmodel.BillingTypePerRequest {
-			// Flat price is independent of usage; charge it and keep the exact
-			// amount pre-consumed (delta 0).
-			postConsumeQuota(ctx, usage, m, &relaymodel.GeneralOpenAIRequest{}, preConsumedQuota, priceResult, groupDiscount, false)
-		} else {
-			billing.ReturnPreConsumedQuota(ctx, preConsumedQuota, m.TokenId)
+		if priceResult.BillingType == dbmodel.BillingTypePerRequest ||
+			priceResult.InputPrice == 0 && priceResult.OutputPrice == 0 && priceResult.CachedPrice == 0 {
+			// Flat and explicitly zero prices are known without token usage.
+			return postConsumeQuota(context.WithoutCancel(ctx), usage, m, &relaymodel.GeneralOpenAIRequest{}, preConsumedQuota, priceResult, groupDiscount, false)
 		}
-		return
+		return errMultimodalUsageMissing
 	}
-	postConsumeQuota(ctx, usage, m, &relaymodel.GeneralOpenAIRequest{}, preConsumedQuota, priceResult, groupDiscount, false)
+	return postConsumeQuota(context.WithoutCancel(ctx), usage, m, &relaymodel.GeneralOpenAIRequest{}, preConsumedQuota, priceResult, groupDiscount, false)
 }

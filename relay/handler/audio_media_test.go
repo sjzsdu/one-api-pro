@@ -88,10 +88,10 @@ func assertNoAudioConsumption(t *testing.T, uid, tid int) {
 	}
 }
 
-// TestRelayAudio_NativeFailuresRefund verifies the gateway media contract.
+// TestRelayAudio_NativeFailuresKeepPending preserves unconfirmed provider execution.
 // 版本: v0.0.28
 // 日期: 2026-11-23
-func TestRelayAudio_NativeFailuresRefund(t *testing.T) {
+func TestRelayAudio_NativeFailuresKeepPending(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"invalid JSON", `broken`}, {"missing audio", `{"output":{}}`},
 		{"download rejected", `{"output":{"audio":{"url":"http://127.0.0.1/audio"}},"usage":{"characters":2}}`},
@@ -108,7 +108,7 @@ func TestRelayAudio_NativeFailuresRefund(t *testing.T) {
 			if w.Body.Len() != 0 || c.Writer.Written() {
 				t.Fatalf("failure committed client body: %q", w.Body.String())
 			}
-			assertNoAudioConsumption(t, uid, tid)
+			assertPendingMediaReservation(t, uid, tid)
 		})
 	}
 }
@@ -255,7 +255,7 @@ func TestRelayImage_WanFailureDoesNotConsume(t *testing.T) {
 	if w.Body.Len() != 0 {
 		t.Fatal("failure wrote client output")
 	}
-	assertNoAudioConsumption(t, uid, tid)
+	assertPendingMediaReservation(t, uid, tid)
 }
 
 // TestRelayImage_WanSuccessContractAndBilling verifies the gateway media contract.
@@ -300,23 +300,23 @@ func TestRelayImage_WanSuccessContractAndBilling(t *testing.T) {
 	}
 }
 
-// TestRelayAudio_MissingTokenUsageRefunds requires actual usage for Qwen Flash.
+// TestRelayAudio_MissingTokenUsageKeepsPending requires actual usage for Qwen Flash.
 // 版本: v0.0.28
 // 日期: 2026-11-23
-func TestRelayAudio_MissingTokenUsageRefunds(t *testing.T) {
+func TestRelayAudio_MissingTokenUsageKeepsPending(t *testing.T) {
 	uid, tid := setupAudioMedia(t, "qwen-audio-3.1-tts-flash", 2, 5)
 	installAudioHTTP(t, func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"output":{"audio":{"url":"https://cdn.example/audio.wav"}},"usage":{}}`)), Request: r}, nil
 	})
 	c, w := newAudioMediaContext(`{"model":"qwen-audio-3.1-tts-flash","input":"你好","voice":"longanhuan_v3.1"}`, "ali", uid, tid)
 	err := RelayAudioHelper(c, relaymode.AudioSpeech)
-	if err == nil || err.Error.Code != "tts_usage_missing" {
+	if err == nil || err.Error.Code != "outcome_unknown" {
 		t.Fatalf("missing usage accepted: %+v", err)
 	}
 	if w.Body.Len() != 0 || c.Writer.Written() {
 		t.Fatal("missing usage committed response")
 	}
-	assertNoAudioConsumption(t, uid, tid)
+	assertPendingMediaReservation(t, uid, tid)
 }
 
 // TestRelayAudio_FreeNativeRequiresNoBalance preserves intentional zero-price models.

@@ -206,16 +206,12 @@
         </a-form-item>
 
         <a-form-item field="models" :label="$t('token.modelsLabel')" :extra="availableModels.length ? $t('token.modelsExtra') : $t('token.modelsExtraEmpty')">
-          <a-select
-            v-model="form.models"
+          <GroupedModelSelect
+            v-model="form.models" :options="availableModels" :metadata="modelMetadata"
+            :prepend-options="[{ value: '*', label: $t('token.allModels') }]"
             :placeholder="availableModels.length ? $t('token.modelsPlaceholder') : $t('token.modelsPlaceholderEmpty')"
-            multiple
-            allow-clear
-            allow-search
-          >
-            <a-option key="*" value="*" :label="$t('token.allModels')" />
-            <a-option v-for="m in availableModels" :key="m" :value="m" :label="m" />
-          </a-select>
+            multiple allow-clear allow-search
+          />
         </a-form-item>
 
         <a-form-item field="subnet" :label="$t('token.subnetLabel')" :extra="$t('token.subnetExtra')">
@@ -357,12 +353,17 @@
             <div class="guide-row">
               <span class="guide-label">{{ $t('token.guideModel') }}</span>
               <div class="guide-value">
-                <a-select v-model="guideModelId" :placeholder="$t('token.selectModel')" allow-clear style="min-width: 220px">
-                  <a-option v-for="m in guideModels" :key="m" :value="m" :label="m" />
-                </a-select>
+                <GroupedModelSelect v-model="guideModelId" :options="guideModels" :metadata="modelMetadata" :placeholder="$t('token.selectModel')" allow-clear allow-search style="min-width: 220px" />
                 <span class="guide-model-hint">{{ $t('token.guideModelHint') }}</span>
               </div>
             </div>
+            <div class="guide-row">
+              <span class="guide-label">{{ locale === 'en' ? 'Operation' : '调用能力' }}</span>
+              <a-select v-model="guideOperation" :aria-label="locale === 'en' ? 'Operation' : '调用能力'" style="min-width: 220px">
+                <a-option v-for="operation in guideOperations" :key="operation" :value="operation">{{ modelOperationLabel(operation, locale) }}</a-option>
+              </a-select>
+            </div>
+            <a-alert v-if="!guideExampleSupported" type="warning">{{ locale === 'en' ? 'No compatible example is available for this operation or execution mode.' : '该能力或执行模式暂无兼容调用示例，请先补充模型能力配置。' }}</a-alert>
             <div class="guide-row">
               <span class="guide-label">{{ $t('token.guideExample') }}</span>
               <pre class="guide-code"><code>{{ curlExample }}</code></pre>
@@ -394,10 +395,13 @@ import { IconPlus, IconCopy, IconBook, IconLock, IconEye, IconCloseCircle } from
 import api from '@/api'
 import { useStatusStore } from '@/stores/status'
 import { buildTokenExpiredTime, formatExpiredTime } from '@/utils/token'
+import { modelOperations, modelOperationLabel } from '@/utils/modelCategory'
+import { buildModelExample } from '@/utils/modelExamples'
+import GroupedModelSelect from '@/components/GroupedModelSelect.vue'
 import { formatQuota as formatQuotaYuan, yuanInputPrecision, DEFAULT_TOKEN_QUOTA_YUAN } from '@/utils/quota'
 
 const statusStore = useStatusStore()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const vAccessibleInput = {
   mounted(el, { value }) {
@@ -422,6 +426,7 @@ const isEdit = ref(false)
 const editingId = ref(null)
 const availableModels = ref([])
 const currentGroup = ref('')
+const modelMetadata = ref([])
 
 const pageItems = computed(() => {
   const start = (activePage.value - 1) * pageSize.value
@@ -503,53 +508,23 @@ const selectedKey = computed(() => tokens.value.find((k) => k.id === guideKeyId.
 
 // 调用示例的模型下拉：只列所选令牌实际能用的模型，默认取第一个，令牌切换时重置。
 const guideModels = computed(() => resolveTokenModels(selectedKey.value))
-const guideModel = computed(
-  () => guideModels.value.find((m) => m === guideModelId.value) || guideModels.value[0] || 'gpt-4o-mini',
-)
+const guideModel = computed(() => guideModels.value.find(model => model === guideModelId.value) || guideModels.value[0] || '')
+const guideOperation = ref('')
+const guideMetadata = computed(() => modelMetadata.value.find(item => item.model_name === guideModel.value) || { model_name: guideModel.value })
+const guideOperations = computed(() => modelOperations(guideMetadata.value))
 watch(guideKeyId, () => { guideModelId.value = null })
-
-const curlExample = computed(() => {
-  const key = selectedKey.value?.key || 'sk-your-key'
-  return `curl ${baseUrl.value}/v1/chat/completions \\
-  -H "Authorization: Bearer ${key}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "${guideModel.value}",
-    "messages": [{ "role": "user", "content": "Hello" }]
-  }'`
-})
-
-const pythonExample = computed(() => {
-  const key = selectedKey.value?.key || 'sk-your-key'
-  return `from openai import OpenAI
-
-client = OpenAI(
-    api_key="${key}",
-    base_url="${baseUrl.value}/v1",
-)
-
-resp = client.chat.completions.create(
-    model="${guideModel.value}",
-    messages=[{"role": "user", "content": "Hello"}],
-)
-print(resp.choices[0].message.content)`
-})
-
-const nodeExample = computed(() => {
-  const key = selectedKey.value?.key || 'sk-your-key'
-  return `import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: "${key}",
-  baseURL: "${baseUrl.value}/v1",
-});
-
-const resp = await client.chat.completions.create({
-  model: "${guideModel.value}",
-  messages: [{ role: "user", content: "Hello" }],
-});
-console.log(resp.choices[0].message.content);`
-})
+watch(guideOperations, operations => { if (!operations.includes(guideOperation.value)) guideOperation.value = operations[0] || '' }, { immediate: true })
+function guideExample(language) {
+  const descriptor = guideMetadata.value.capabilities?.operations?.[guideOperation.value]
+  if (descriptor?.modes?.length && !descriptor.modes.some(mode => mode === 'sync' || mode === 'async')) return { supported: false, code: '' }
+  const support = guideMetadata.value.gateway_support
+  if (support && !(support[guideOperation.value]?.length)) return { supported: false, code: '' }
+  return buildModelExample({ model: guideModel.value, operation: guideOperation.value, language, baseUrl: baseUrl.value, apiKey: withSkPrefix(selectedKey.value?.key || 'sk-your-key') })
+}
+const guideExampleSupported = computed(() => guideExample('curl').supported)
+const curlExample = computed(() => guideExample('curl').code)
+const pythonExample = computed(() => guideExample('python').code)
+const nodeExample = computed(() => guideExample('node').code)
 
 const configExample = computed(() => {
   const key = selectedKey.value?.key || 'sk-your-key'
@@ -663,10 +638,9 @@ async function fetchTokens({ append = false, pageIdx = 0 } = {}) {
 
 async function fetchAvailableModels() {
   try {
-    const { data } = await api.get('/api/user/available_models')
-    if (data.success) {
-      availableModels.value = data.data || []
-    }
+    const [available, catalog] = await Promise.all([api.get('/api/user/available_models'), api.get('/api/model/options')])
+    if (available.data.success) availableModels.value = available.data.data || []
+    if (catalog.data.success) modelMetadata.value = catalog.data.data || []
   } catch {
     /* ignore */
   }

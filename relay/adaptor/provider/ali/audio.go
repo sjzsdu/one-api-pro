@@ -20,6 +20,13 @@ import (
 	schema "github.com/modelbus/one-api-pro/relay/schema"
 )
 
+// SpeechUsesTokens keeps model-specific billing units inside the provider adapter.
+// 版本: v0.0.28
+// 日期: 2026-11-23
+func (a *Adaptor) SpeechUsesTokens(modelName string) bool {
+	return modelName == "qwen-audio-3.1-tts-flash"
+}
+
 // ConvertAudioSpeechRequest preserves the requested codec and numeric speaking rate.
 // 版本: v0.0.28
 // 日期: 2026-11-23

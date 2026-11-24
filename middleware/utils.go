@@ -21,10 +21,22 @@ func abortWithMessage(c *gin.Context, statusCode int, message string) {
 }
 
 func getRequestModel(c *gin.Context) (string, error) {
+	if c.Request.URL.Path == "/v1/realtime" {
+		if name := c.Query("model"); name != "" {
+			return name, nil
+		}
+		return "", fmt.Errorf("model is required")
+	}
+	if c.Request.Method == "GET" || c.Request.Method == "DELETE" {
+		return "", nil
+	}
 	var modelRequest ModelRequest
 	err := common.UnmarshalBodyReusable(c, &modelRequest)
 	if err != nil {
 		return "", fmt.Errorf("common.UnmarshalBodyReusable failed: %w", err)
+	}
+	if modelRequest.Model == "" && (c.Request.URL.Path == "/v1/rerank" || c.Request.URL.Path == "/v1/media/jobs" || c.Request.URL.Path == "/v1/images/edits") {
+		return "", fmt.Errorf("model is required")
 	}
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/moderations") {
 		if modelRequest.Model == "" {
