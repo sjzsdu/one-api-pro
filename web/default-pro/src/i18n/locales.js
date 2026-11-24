@@ -41,6 +41,7 @@ const base = {
       plans: '套餐',
       orders: '订单',
       models: '模型',
+      modelAliases: '模型别名',
     },
     layout: {
       breadcrumbHome: '首页',
@@ -727,6 +728,7 @@ const base = {
       plans: 'Plans',
       orders: 'Orders',
       models: 'Models',
+      modelAliases: 'Model Aliases',
     },
     layout: {
       breadcrumbHome: 'Home',

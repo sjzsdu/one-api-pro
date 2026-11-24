@@ -49,6 +49,10 @@
           <template #icon><icon-file /></template>
           {{ $t('menu.log') }}
         </a-menu-item>
+        <a-menu-item v-if="!authStore.isAdmin" key="/setting/personal" role="menuitem" tabindex="0" :aria-current="route.path === '/setting/personal' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/setting/personal')">
+          <template #icon><icon-settings /></template>
+          {{ $t('menu.modelAliases') }}
+        </a-menu-item>
 
         <template v-if="authStore.isAdmin">
           <div class="menu-divider" />

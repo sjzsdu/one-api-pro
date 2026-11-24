@@ -4,7 +4,7 @@
       <div class="setting-sidebar">
         <div class="sidebar-title">{{ $t('settingPage.sidebarTitle') }}</div>
         <a-menu :selected-keys="[activeKey]" @menu-item-click="onMenuClick" class="setting-menu" role="tablist" :aria-label="$t('settingPage.sidebarTitle')">
-          <a-menu-item key="system" role="tab" tabindex="0" :aria-selected="activeKey === 'system'"><template #icon><icon-settings /></template>{{ $t('settingPage.menu.system') }}</a-menu-item>
+          <a-menu-item key="system" v-if="authStore.isAdmin" role="tab" tabindex="0" :aria-selected="activeKey === 'system'"><template #icon><icon-settings /></template>{{ $t('settingPage.menu.system') }}</a-menu-item>
           <a-menu-item key="cluster" v-if="authStore.isRoot" role="tab" tabindex="0" :aria-selected="activeKey === 'cluster'"><template #icon><icon-storage /></template>{{ $t('settingPage.menu.cluster') }}</a-menu-item>
           <a-menu-item key="operation" v-if="authStore.isRoot" role="tab" tabindex="0" :aria-selected="activeKey === 'operation'"><template #icon><icon-tool /></template>{{ $t('settingPage.menu.operation') }}</a-menu-item>
           <a-menu-item key="payment" v-if="authStore.isRoot" role="tab" tabindex="0" :aria-selected="activeKey === 'payment'"><template #icon><icon-alipay-circle /></template>{{ $t('settingPage.menu.payment') }}</a-menu-item>
