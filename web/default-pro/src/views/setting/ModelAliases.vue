@@ -6,11 +6,11 @@
   <section class="aliases-section" aria-labelledby="alias-title">
     <h3 id="alias-title">{{ t('title') }}</h3>
     <p class="description">{{ t('description') }}</p>
-    <a-radio-group v-model="scope" type="button" :aria-label="t('scope')" :disabled="busy || editorOpen || current.loading" class="scope-picker">
+    <a-radio-group v-if="authStore.isRoot" v-model="scope" type="button" :aria-label="t('scope')" :disabled="busy || editorOpen || current.loading" class="scope-picker">
       <a-radio value="personal">{{ t('personal') }}</a-radio>
       <a-radio value="global">{{ t('global') }}</a-radio>
     </a-radio-group>
-    <a-alert :type="scope === 'global' && authStore.isRoot ? 'warning' : 'info'">{{ t(scope === 'personal' ? 'personalNotice' : authStore.isRoot ? 'globalNotice' : 'globalReadOnly') }}</a-alert>
+    <a-alert :type="scope === 'global' ? 'warning' : 'info'">{{ t(scope === 'personal' ? 'personalNotice' : 'globalNotice') }}</a-alert>
     <p class="routing-notice">{{ t('routingNotice') }}</p>
     <div class="alias-actions">
       <a-button v-if="editable" type="primary" :disabled="current.rows.length >= 50 || busy || editorOpen || current.loading || !!current.error" @click="openEditor(-1)">{{ t('add') }}</a-button>
@@ -20,7 +20,7 @@
     <a-spin :loading="current.loading || (saving && !editorOpen)" style="width: 100%">
       <a-alert v-if="current.error" type="error" class="load-error">{{ current.error }} <a-button type="text" :disabled="current.loading" @click="load(true)">{{ t('retry') }}</a-button></a-alert>
       <template v-else>
-        <a-empty v-if="!current.rows.length" :description="t(scope === 'personal' ? 'emptyPersonal' : editable ? 'emptyGlobal' : 'emptyAvailable')" />
+        <a-empty v-if="!current.rows.length" :description="t(scope === 'personal' ? 'emptyPersonal' : 'emptyGlobal')" />
         <ModelAliasSummary v-for="(row, index) in current.rows" :key="row.alias" :row="row" :editable="editable" :global="scope === 'global'" :disabled="busy || editorOpen || current.loading" @test="openTest(row.alias)" @edit="openEditor(index)" @remove="removeAlias(index)" />
       </template>
     </a-spin>
@@ -58,15 +58,14 @@ async function load(force = false) {
   operationError.value = ''
   state.loading = true; state.error = ''
   try {
-    const readOnlyGlobal = selectedScope === 'global' && !authStore.isRoot
     const [aliases, targets, catalog] = await Promise.all([
-      readOnlyGlobal ? modelAliasApi.effective() : modelAliasApi.list(selectedScope),
-      modelAliasApi.targets(readOnlyGlobal ? 'personal' : selectedScope),
-      api.get('/api/model/options', { params: selectedScope === 'global' && authStore.isRoot ? { scope: 'all' } : {} }),
+      modelAliasApi.list(selectedScope),
+      modelAliasApi.targets(selectedScope),
+      api.get('/api/model/options', { params: selectedScope === 'global' ? { scope: 'all' } : {} }),
     ])
     if (!aliases.data.success || !targets.data.success) throw new Error(aliases.data.message || targets.data.message || t('failed'))
     const items = Array.isArray(aliases.data.data) ? aliases.data.data : []
-    state.rows = (readOnlyGlobal ? items.filter(item => item.source === 'global') : items).map(normalizeModelAlias)
+    state.rows = items.map(normalizeModelAlias)
     state.targets = targets.data.data.models || []
     const normalized = new Map((catalog.data.success ? catalog.data.data || [] : []).map(item => [item.model_name, item]))
     state.metadata = (targets.data.data.metadata || []).map(item => ({ ...item, ...(normalized.get(item.model_name) || {}) }))
@@ -96,8 +95,6 @@ async function persist(rows) {
     if (!data.success) throw new Error(data.message || t('failed'))
     state.rows = (data.data || []).map(normalizeModelAlias)
     Message.success(t(selectedScope === 'global' ? 'published' : 'saved'))
-    // A personal override can change the ordinary user's effective global list.
-    if (selectedScope === 'personal' && !authStore.isRoot) states.global.loaded = false
     return true
   } catch (error) {
     operationError.value = error.message || t('failed')
@@ -118,6 +115,9 @@ async function removeAlias(index) {
   await persist(current.value.rows.filter((_, rowIndex) => rowIndex !== index))
 }
 watch(scope, () => load(), { immediate: true })
+watch(() => authStore.isRoot, (isRoot) => {
+  if (!isRoot && scope.value === 'global') scope.value = 'personal'
+})
 </script>
 
 <style scoped>
