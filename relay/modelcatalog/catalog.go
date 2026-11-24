@@ -99,6 +99,7 @@ var catalog = map[int]Preset{
 			{ID: "qwen3-vl-plus", Name: "通义千问 VL Plus", Group: "vision"},
 			{ID: "qwen-vl-plus", Name: "通义千问 VL Plus（旧）", Group: "vision", Deprecated: "2026-06-01", Replacement: "qwen3-vl-plus"},
 			{ID: "wan2.7-image", Name: "万相 2.7 文生图", Group: "image"},
+			{ID: "wan2.6-t2i", Name: "万相 2.6 文生图", Group: "image"},
 			{ID: "cosyvoice-v3-flash", Name: "CosyVoice 语音合成", Group: "audio"},
 			{ID: "qwen-audio-3.1-tts-flash", Name: "Qwen TTS 语音合成", Group: "audio"},
 		},
@@ -152,6 +153,7 @@ var catalog = map[int]Preset{
 			{ID: "glm-5.3", Name: "GLM 5.3", Group: "reasoning"},
 			{ID: "kimi-k3.1-pro", Name: "Kimi K3.1 Pro", Group: "reasoning"},
 			{ID: "kimi-k2.8-preview", Name: "Kimi K2.8 Preview", Group: "chat"},
+			{ID: "seed-tts-2.0", Name: "豆包语音合成 2.0", Group: "audio"},
 		},
 	},
 }

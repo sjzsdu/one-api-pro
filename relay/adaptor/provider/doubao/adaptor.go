@@ -7,11 +7,14 @@ package doubao
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
+	"github.com/modelbus/one-api-pro/relay/adaptor"
+	oa "github.com/modelbus/one-api-pro/relay/adaptor/openai"
 	"github.com/modelbus/one-api-pro/relay/meta"
 	"github.com/modelbus/one-api-pro/relay/relaymode"
-	oa "github.com/modelbus/one-api-pro/relay/adaptor/openai"
 )
 
 type Adaptor struct {
@@ -26,6 +29,7 @@ var ModelList = []string{
 	"doubao-seed-2.1-pro",
 	"doubao-seed-2.1-lite",
 	"doubao-seed-2.0-mini",
+	"seed-tts-2.0",
 	"doubao-seed-evolving",
 	"deepseek-v4-pro",
 	"deepseek-v4-flash",
@@ -90,15 +94,37 @@ func arkVersionedBase(baseURL string) string {
 	}
 }
 
+// volcTTSEndpoint 是火山语音合成 2.0 的 V3 单向流式接口。它与方舟大模型
+// （ark.cn-beijing.volces.com）是不同服务，与渠道 base_url 无关，鉴权用的是
+// 语音控制台的 X-Api-Key（并非方舟的 Bearer key）。
+const volcTTSEndpoint = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+
+// SetupRequestHeader 为语音合成设置火山原生鉴权头；其余模式沿用 openai 的 Bearer。
+// 版本: v0.0.28
+// 日期: 2026-11-23
+func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Request, m *meta.Meta) error {
+	if m.Mode == relaymode.AudioSpeech {
+		adaptor.SetupCommonRequestHeader(c, req, m)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Api-Key", m.APIKey)
+		req.Header.Set("X-Api-Resource-Id", m.ActualModelName)
+		req.Header.Set("X-Api-Request-Id", NewVolcTTSRequestID())
+		return nil
+	}
+	return a.Adaptor.SetupRequestHeader(c, req, m)
+}
+
 func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
 	switch meta.Mode {
 	case relaymode.ChatCompletions:
 		return fmt.Sprintf("%s/chat/completions", arkVersionedBase(meta.BaseURL)), nil
 	case relaymode.Embeddings:
 		return fmt.Sprintf("%s/embeddings", arkVersionedBase(meta.BaseURL)), nil
+	case relaymode.AudioSpeech:
+		return volcTTSEndpoint, nil
 	default:
 	}
 	return "", fmt.Errorf("unsupported relay mode %d for doubao", meta.Mode)
 }
 
-func (a *Adaptor) GetModelList() []string  { return ModelList }
+func (a *Adaptor) GetModelList() []string { return ModelList }

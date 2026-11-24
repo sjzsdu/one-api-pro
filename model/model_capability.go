@@ -192,11 +192,17 @@ func builtinModelCapabilities(provider, name string) ModelCapabilities {
 		case name == "wan2.7-image" || name == "wan2.7-image-pro":
 			op("image", "image.generate", []string{"sync"}, []string{"text"}, []string{"image"}, OperationLimits{MaxItems: 4})
 			c.Operations["image.edit"] = OperationCapability{Modes: []string{"sync"}, InputModalities: []string{"text", "image"}, OutputModalities: []string{"image"}, Limits: OperationLimits{MaxItems: 4}}
+		case name == "wan2.6-t2i":
+			op("image", "image.generate", []string{"sync"}, []string{"text"}, []string{"image"}, OperationLimits{MaxItems: 4})
 		case strings.HasPrefix(name, "cosyvoice-") || strings.HasPrefix(name, "qwen-audio-3.") && strings.Contains(name, "tts"):
 			op("audio", "audio.speech", []string{"sync"}, []string{"text"}, []string{"audio"}, OperationLimits{Formats: []string{"wav", "mp3", "pcm", "opus"}, MaxInputCharacters: 4096, MinSpeed: .5, MaxSpeed: 2})
 		case strings.HasPrefix(name, "qwen3-vl-embedding"):
 			op("embedding", "embedding.create", []string{"sync"}, []string{"text", "image", "video"}, []string{"vector"}, OperationLimits{})
 		}
+	}
+	if provider == "doubao" && strings.HasPrefix(name, "seed-tts") {
+		// 火山语音合成 2.0（seed-tts-2.0）由 doubao 适配器的 V3 原生协议实现。
+		op("audio", "audio.speech", []string{"sync"}, []string{"text"}, []string{"audio"}, OperationLimits{Formats: []string{"wav", "pcm", "ogg_opus", "mp3"}, MaxInputCharacters: 1024, MinSpeed: 0.5, MaxSpeed: 2})
 	}
 	if len(c.Operations) > 0 {
 		return c

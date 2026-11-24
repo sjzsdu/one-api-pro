@@ -33,6 +33,10 @@ func RuntimeOperationModes(providerID, modelName string) map[string][]string {
 		case name == "wan2.7-image" || name == "wan2.7-image-pro":
 			result["image.generate"] = []string{"sync"}
 			result["image.edit"] = []string{"sync"}
+		case name == "wan2.6-t2i":
+			// 旧万相文生图上游走 text2image/image-synthesis 异步协议并由网关轮询，
+			// 但对客户端仍是 /v1/images/generations 同步返回，故对外模式为 sync。
+			result["image.generate"] = []string{"sync"}
 		case strings.HasPrefix(name, "cosyvoice-") || strings.Contains(name, "tts"):
 			result["audio.speech"] = []string{"sync"}
 		case strings.HasPrefix(name, "qwen3-vl-embedding"):
@@ -59,6 +63,9 @@ func RuntimeOperationModes(providerID, modelName string) map[string][]string {
 		result["audio.translate"] = []string{"sync"}
 	} else if providerID == "zhipu" || providerID == "replicate" || providerID == "baidu" {
 		result["image.generate"] = []string{"sync"}
+	} else if providerID == "doubao" && (name == "seed-tts-2.0" || strings.HasPrefix(name, "seed-tts")) {
+		// 火山语音合成 2.0 由 doubao 适配器的 V3 原生协议实现。
+		result["audio.speech"] = []string{"sync"}
 	}
 	return result
 }

@@ -30,6 +30,11 @@ var ImageSizeRatios = map[string]map[string]float64{
 		"720x1280":  1,
 		"1280x720":  1,
 	},
+	"wan2.6-t2i": {
+		"1024x1024": 1,
+		"720x1280":  1,
+		"1280x720":  1,
+	},
 	"step-1x-medium": {
 		"256x256":   1,
 		"512x512":   1,
@@ -46,6 +51,7 @@ var ImageGenerationAmounts = map[string][2]int{
 	"ali-stable-diffusion-xl":   {1, 4}, // Ali
 	"ali-stable-diffusion-v1.5": {1, 4}, // Ali
 	"wanx-v1":                   {1, 4}, // Ali
+	"wan2.6-t2i":                {1, 4}, // Ali 旧万相文生图
 	"cogview-3":                 {1, 1},
 	"step-1x-medium":            {1, 1},
 }
@@ -56,6 +62,7 @@ var ImagePromptLengthLimitations = map[string]int{
 	"ali-stable-diffusion-xl":   4000,
 	"ali-stable-diffusion-v1.5": 4000,
 	"wanx-v1":                   4000,
+	"wan2.6-t2i":                4000,
 	"cogview-3":                 833,
 	"step-1x-medium":            4000,
 }

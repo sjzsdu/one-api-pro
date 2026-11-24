@@ -54,6 +54,7 @@ var ModelList = []string{
 	"qwen3.6-plus",
 	"wan2.7-image-pro",
 	"wan2.7-image",
+	"wan2.6-t2i",
 	"MiniMax/MiniMax-M2.7",
 	"MiniMax/speech-2.8-hd",
 	"MiniMax/speech-2.8-turbo",
