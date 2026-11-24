@@ -25,6 +25,37 @@ const pythonValue = value => {
   return JSON.stringify(value)
 }
 
+// OPERATION_EXAMPLE_PRIORITY orders operations so the primary task wins the default selection.
+// 版本: v0.0.28
+// 日期: 2026-11-23
+const OPERATION_EXAMPLE_PRIORITY = [
+  'chat.generate', 'image.generate', 'audio.speech', 'embedding.create',
+  'rerank.score', 'video.generate', 'audio.transcribe', 'moderation.check',
+  'audio.translate', 'image.edit', 'image.variation',
+]
+
+// exampleSupported reports whether a concrete operation has a callable example template.
+// 版本: v0.0.28
+// 日期: 2026-11-23
+export function exampleSupported(model = '', operation = '') {
+  if (operation === 'audio.translate') return true
+  if (operation === 'audio.transcribe' && !String(model).startsWith('qwen3-asr')) return true
+  return Boolean(definitions[operation])
+}
+
+// orderExampleOperations keeps only operations with examples, primary task first.
+// 版本: v0.0.28
+// 日期: 2026-11-23
+export function orderExampleOperations(model = '', operations = []) {
+  const rank = op => {
+    const idx = OPERATION_EXAMPLE_PRIORITY.indexOf(op)
+    return idx === -1 ? OPERATION_EXAMPLE_PRIORITY.length : idx
+  }
+  return [...operations]
+    .filter(op => exampleSupported(model, op))
+    .sort((a, b) => rank(a) - rank(b))
+}
+
 // buildModelExample returns a valid operation template or an explicit unavailable state.
 // 版本: v0.0.28
 // 日期: 2026-11-23

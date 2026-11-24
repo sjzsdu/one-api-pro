@@ -662,7 +662,10 @@ function applyTypeDefaults(type, { overwriteName = true, overwriteModels = true 
   // 后端已按时效过滤掉过期模型，这里全部作为候选并默认选中。
   const ids = models.map((m) => (typeof m === 'string' ? m : m?.id)).filter(Boolean)
   if (overwriteModels && ids.length) {
-    modelOptions.value = [...ids]
+    // curated 主流模型排在前面，再把适配器全量清单（all_models）并入候选，
+    // 让生图、语音合成等未进入主流清单的型号在该类型下也能被选到。
+    const allIds = Array.isArray(preset.all_models) ? preset.all_models : []
+    modelOptions.value = mergeModelNames(ids, allIds)
     selectedModels.value = [...ids]
     const catalog = {}
     models.forEach((m) => {
@@ -671,6 +674,20 @@ function applyTypeDefaults(type, { overwriteName = true, overwriteModels = true 
     modelCatalog.value = catalog
   }
   return true
+}
+
+// 编辑已有渠道时，把该类型的适配器全量清单并入模型候选池。
+// 编辑模式不会套用 applyTypeDefaults（避免覆盖已有配置），但用户仍应能选到
+// 该类型支持的全部模型，例如给阿里云灵积渠道补 wan2.7-image / cosyvoice。
+function expandEditModelOptions(type) {
+  const preset = channelDefaults.value?.[String(type)]
+  const all = Array.isArray(preset?.all_models) ? preset.all_models : []
+  if (all.length) modelOptions.value = mergeModelNames(modelOptions.value, all)
+  const curated = Array.isArray(preset?.models) ? preset.models : []
+  curated.forEach((m) => {
+    if (m && typeof m !== 'string' && m.id && !modelCatalog.value[m.id]) modelCatalog.value[m.id] = m
+  })
+  return all.length > 0
 }
 
 function onTypeChange(type) {
@@ -731,6 +748,10 @@ function openEditModal(record) {
   modelOptions.value = parseModelNames(form.models)
   if (form.type === 52) {
     modelOptions.value = mergeModelNames(defaultOpenAICodexModels, modelOptions.value)
+  }
+  // 并入该类型支持的全量模型；若默认值尚未加载完成，加载后再补一次。
+  if (!expandEditModelOptions(form.type) && !Object.keys(channelDefaults.value).length) {
+    fetchChannelDefaults().then(() => expandEditModelOptions(form.type))
   }
   manualModels.value = ''
   modalVisible.value = true

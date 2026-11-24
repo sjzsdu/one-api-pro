@@ -396,7 +396,7 @@ import api from '@/api'
 import { useStatusStore } from '@/stores/status'
 import { buildTokenExpiredTime, formatExpiredTime } from '@/utils/token'
 import { modelOperations, modelOperationLabel } from '@/utils/modelCategory'
-import { buildModelExample } from '@/utils/modelExamples'
+import { buildModelExample, orderExampleOperations } from '@/utils/modelExamples'
 import GroupedModelSelect from '@/components/GroupedModelSelect.vue'
 import { formatQuota as formatQuotaYuan, yuanInputPrecision, DEFAULT_TOKEN_QUOTA_YUAN } from '@/utils/quota'
 
@@ -511,14 +511,18 @@ const guideModels = computed(() => resolveTokenModels(selectedKey.value))
 const guideModel = computed(() => guideModels.value.find(model => model === guideModelId.value) || guideModels.value[0] || '')
 const guideOperation = ref('')
 const guideMetadata = computed(() => modelMetadata.value.find(item => item.model_name === guideModel.value) || { model_name: guideModel.value })
-const guideOperations = computed(() => modelOperations(guideMetadata.value))
+// 只列该模型有调用示例的能力，主操作（对话/生图/语音）排前面，确保切换模型后默认示例对得上。
+const guideOperations = computed(() => orderExampleOperations(guideModel.value, modelOperations(guideMetadata.value)))
 watch(guideKeyId, () => { guideModelId.value = null })
 watch(guideOperations, operations => { if (!operations.includes(guideOperation.value)) guideOperation.value = operations[0] || '' }, { immediate: true })
 function guideExample(language) {
+  if (!guideOperation.value) return { supported: false, code: '' }
   const descriptor = guideMetadata.value.capabilities?.operations?.[guideOperation.value]
   if (descriptor?.modes?.length && !descriptor.modes.some(mode => mode === 'sync' || mode === 'async')) return { supported: false, code: '' }
+  // gateway_support 只作正向放行：仅当它明确声明了该操作却给了空模式时才判不可用；
+  // 缺少某个 key 不能推断为不支持（后端按 provider 只上报已实现操作，声明层可能更全）。
   const support = guideMetadata.value.gateway_support
-  if (support && !(support[guideOperation.value]?.length)) return { supported: false, code: '' }
+  if (support && Object.prototype.hasOwnProperty.call(support, guideOperation.value) && !(support[guideOperation.value]?.length)) return { supported: false, code: '' }
   return buildModelExample({ model: guideModel.value, operation: guideOperation.value, language, baseUrl: baseUrl.value, apiKey: withSkPrefix(selectedKey.value?.key || 'sk-your-key') })
 }
 const guideExampleSupported = computed(() => guideExample('curl').supported)

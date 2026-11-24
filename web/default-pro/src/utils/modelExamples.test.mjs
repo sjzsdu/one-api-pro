@@ -5,7 +5,7 @@
 // 作者: Codex
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildModelExample } from './modelExamples.js'
+import { buildModelExample, exampleSupported, orderExampleOperations } from './modelExamples.js'
 
 test('speech and image examples use their own endpoint and payload', () => {
   const speech = buildModelExample({ model: 'voice-model', operation: 'audio.speech', language: 'curl', baseUrl: 'https://gateway.example', apiKey: 'sk-example' })
@@ -47,4 +47,23 @@ test('unknown operations expose unavailable examples instead of chat fallback', 
   const example = buildModelExample({ model: 'custom', operation: 'unknown' })
   assert.equal(example.supported, false)
   assert.equal(example.code, '')
+})
+
+test('operation ordering picks the primary task for each model type', () => {
+  const image = orderExampleOperations('wan2.7-image', ['image.edit', 'image.generate'])
+  assert.equal(image[0], 'image.generate')
+  assert.ok(image.includes('image.edit'))
+  const speech = orderExampleOperations('cosyvoice-v3-flash', ['audio.speech'])
+  assert.equal(speech[0], 'audio.speech')
+  const chat = orderExampleOperations('gpt-4o', ['chat.generate'])
+  assert.equal(chat[0], 'chat.generate')
+  const noExample = orderExampleOperations('custom', ['unknown.op'])
+  assert.equal(noExample.length, 0)
+})
+
+test('example support reflects available templates for media and transcription models', () => {
+  assert.equal(exampleSupported('cosyvoice-v3-flash', 'audio.speech'), true)
+  assert.equal(exampleSupported('wan2.6-t2i', 'image.generate'), true)
+  assert.equal(exampleSupported('wan2.7-image', 'image.edit'), true)
+  assert.equal(exampleSupported('custom', 'unknown.op'), false)
 })
