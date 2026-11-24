@@ -38,8 +38,13 @@ func TestOperationProbe_InitUsesExecutionMeta(t *testing.T) {
 // 版本: v0.0.28
 // 日期: 2026-11-23
 func TestOperationProbe_DeclaredProbeContract(t *testing.T) {
-	if len(ProbeOperations("ali", "cosyvoice-v3-flash")) != 0 || len(ProbeOperations("ali", "wan2.6-t2v")) != 0 {
-		t.Fatal("generation advertised as probeable")
+	// 语音合成与文生图现在支持带输入的调试探测（回传媒体供页面预览）；
+	// 视频等仍需显式异步/realtime 端点的生成类操作保持不可探测。
+	if _, ok := ProbeOperations("ali", "cosyvoice-v3-flash")["audio.speech"]; !ok {
+		t.Fatal("speech synthesis probe not declared for cosyvoice")
+	}
+	if len(ProbeOperations("ali", "wan2.6-t2v")) != 0 {
+		t.Fatal("video generation advertised as probeable")
 	}
 	if _, ok := ProbeOperations("ali", "paraformer-v2")["audio.transcribe"]; ok {
 		t.Fatal("legacy wire ASR falsely advertised as native probe")
@@ -50,12 +55,15 @@ func TestOperationProbe_DeclaredProbeContract(t *testing.T) {
 	if !ProbeOperations("ali", "wan2.7-image")["image.edit"].RequiresInput {
 		t.Fatal("editing input not declared")
 	}
+	if !ProbeOperations("ali", "wan2.7-image")["image.generate"].RequiresInput {
+		t.Fatal("image generation input not declared")
+	}
 	setupCapabilityCatalog(t)
 	rows, err := configuredModelItems([]*model.Channel{{Id: 1, Type: 17, Models: "qwen3-asr-flash,cosyvoice-v3-flash", Status: 1}})
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("catalog error: %v", err)
 	}
-	if !rows[0].ProbeOperations["audio.transcribe"].RequiresInput || len(rows[1].ProbeOperations) != 0 {
+	if !rows[0].ProbeOperations["audio.transcribe"].RequiresInput || len(rows[1].ProbeOperations) == 0 {
 		t.Fatal("catalog omitted explicit probe contract")
 	}
 }

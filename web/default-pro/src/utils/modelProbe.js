@@ -44,5 +44,33 @@ export function buildProbeInput(operation, draft) {
     if (!prompt) throw new Error('请输入图片编辑提示词 / Enter an image editing prompt')
     return { images: [mediaURL(draft.image)], prompt, n: 1 }
   }
+  if (operation === 'audio.speech') {
+    const input = String(draft.input || '').trim()
+    if (!input) throw new Error('请输入要合成的文本 / Enter the text to synthesize')
+    const voice = String(draft.voice || '').trim()
+    if (!voice) throw new Error('请输入音色 / Enter a voice')
+    const payload = { input, voice, response_format: draft.response_format || 'wav' }
+    const speed = Number(draft.speed)
+    if (draft.speed !== '' && draft.speed != null && Number.isFinite(speed)) payload.speed = speed
+    return payload
+  }
+  if (operation === 'image.generate') {
+    const prompt = String(draft.prompt || '').trim()
+    if (!prompt) throw new Error('请输入生图提示词 / Enter an image prompt')
+    const payload = { prompt }
+    const size = String(draft.size || '').trim()
+    if (size) payload.size = size
+    const n = Number(draft.n)
+    if (Number.isInteger(n) && n >= 1 && n <= 4) payload.n = n
+    return payload
+  }
   throw new Error('此操作不支持媒体探测 / Media probe unsupported for this operation')
+}
+
+// probeProducesMedia identifies operations whose probe response carries inline
+// audio/image artifacts that the admin UI should preview.
+// 版本: v0.0.28
+// 日期: 2026-11-24
+export function probeProducesMedia(operation) {
+  return operation === 'audio.speech' || operation === 'image.generate'
 }

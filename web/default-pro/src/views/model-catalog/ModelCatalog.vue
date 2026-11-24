@@ -71,15 +71,80 @@
       </template>
     </a-table>
     <ModelCapabilityModal :visible="!!capabilityRecord" :record="capabilityRecord" :saving="capabilitySaving" @cancel="capabilityRecord = null" @save="saveCapability" />
-    <a-modal :visible="!!probeRecord" :title="label('填写探测输入并确认费用', 'Provide probe input and confirm cost')" :ok-loading="!!testingKey" @cancel="probeRecord = null" @before-ok="submitInputProbe">
-      <a-alert type="warning" style="margin-bottom: 16px">{{ label('将向该渠道发送真实媒体请求并可能产生费用。仅使用有权处理的公网媒体 URL。', 'This sends a real media request and may incur charges. Use a public media URL you are authorized to process.') }}</a-alert>
+    <a-modal :visible="!!probeRecord" :title="probeModalTitle" :ok-loading="!!testingKey" :ok-text="probeProducesMedia(probeInputOperation) && probeResultMedia.length ? label('重新生成', 'Regenerate') : label('开始测试', 'Run probe')" :width="probeProducesMedia(probeInputOperation) ? 640 : 520" @cancel="probeRecord = null" @before-ok="submitInputProbe">
+      <a-alert type="warning" style="margin-bottom: 16px">{{ probeWarning }}</a-alert>
       <a-form :model="probeDraft" layout="vertical">
         <a-form-item v-if="probeInputOperation === 'audio.transcribe'" :label="label('音频 URL（必填）', 'Audio URL (required)')"><a-input v-model="probeDraft.audio" placeholder="https://…/audio.wav" /></a-form-item>
         <template v-if="probeInputOperation === 'image.edit'">
           <a-form-item :label="label('图片 URL（必填）', 'Image URL (required)')"><a-input v-model="probeDraft.image" placeholder="https://…/image.png" /></a-form-item>
           <a-form-item :label="label('编辑提示词（必填）', 'Editing prompt (required)')"><a-textarea v-model="probeDraft.prompt" /></a-form-item>
         </template>
+        <template v-if="probeInputOperation === 'audio.speech'">
+          <a-form-item :label="label('合成文本（必填）', 'Text to synthesize (required)')">
+            <a-textarea v-model="probeDraft.input" :auto-size="{ minRows: 3, maxRows: 6 }" :placeholder="label('输入要让模型朗读的文字，也可从 txt 文件导入', 'Enter text for the model to speak, or import from a .txt file')" />
+            <a-upload :show-file-list="false" :before-upload="importTextFile" accept=".txt,.md,.text,text/plain" class="probe-file-import">
+              <a-button size="small">{{ label('从文件导入文本', 'Import text from file') }}</a-button>
+            </a-upload>
+          </a-form-item>
+          <a-row :gutter="12">
+            <a-col :span="12">
+              <a-form-item :label="label('音色（必填）', 'Voice (required)')">
+                <a-input v-model="probeDraft.voice" :placeholder="label('如 longwan / longyu，或模型支持的音色 ID', 'e.g. longwan / longyu, or a supported voice ID')" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item :label="label('语速（0.5–2）', 'Speed (0.5–2)')">
+                <a-input-number v-model="probeDraft.speed" :min="0.5" :max="2" :step="0.1" style="width: 100%" :placeholder="label('默认 1.0', 'default 1.0')" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item :label="label('输出格式', 'Output format')">
+            <a-select v-model="probeDraft.response_format" style="width: 200px">
+              <a-option value="wav">wav</a-option>
+              <a-option value="mp3">mp3</a-option>
+              <a-option value="opus">opus</a-option>
+              <a-option value="pcm">pcm</a-option>
+            </a-select>
+          </a-form-item>
+          <a-alert v-if="voiceHint" type="info" show-icon style="margin-bottom: 8px">{{ voiceHint }}</a-alert>
+        </template>
+        <template v-if="probeInputOperation === 'image.generate'">
+          <a-form-item :label="label('生图提示词（必填）', 'Image prompt (required)')">
+            <a-textarea v-model="probeDraft.prompt" :auto-size="{ minRows: 3, maxRows: 6 }" :placeholder="label('描述要生成的画面，也可从 txt 文件导入', 'Describe the image to generate, or import from a .txt file')" />
+            <a-upload :show-file-list="false" :before-upload="importTextFile" accept=".txt,.md,.text,text/plain" class="probe-file-import">
+              <a-button size="small">{{ label('从文件导入提示词', 'Import prompt from file') }}</a-button>
+            </a-upload>
+          </a-form-item>
+          <a-row :gutter="12">
+            <a-col :span="12">
+              <a-form-item :label="label('尺寸', 'Size')">
+                <a-select v-model="probeDraft.size" style="width: 100%" allow-create>
+                  <a-option value="1024x1024">1024x1024</a-option>
+                  <a-option value="1024x1536">1024x1536</a-option>
+                  <a-option value="1536x1024">1536x1024</a-option>
+                  <a-option value="1280x720">1280x720</a-option>
+                  <a-option value="720x1280">720x1280</a-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item :label="label('生成数量', 'Count')">
+                <a-input-number v-model="probeDraft.n" :min="1" :max="4" style="width: 100%" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </template>
       </a-form>
+      <div v-if="probeResultMedia.length" class="probe-media-preview">
+        <div class="preview-title">{{ label('生成结果', 'Generated result') }}</div>
+        <template v-for="(item, index) in probeResultMedia" :key="index">
+          <audio v-if="item.kind === 'audio'" :src="mediaSrc(item)" controls class="probe-audio" />
+          <div v-else-if="item.kind === 'image' && item.base64" class="probe-image-wrap">
+            <img :src="mediaSrc(item)" :alt="item.description || 'probe image'" class="probe-image" />
+          </div>
+          <a-link v-else-if="item.kind === 'image' && item.description" :href="item.description" target="_blank">{{ label('查看生成图片', 'View generated image') }}</a-link>
+        </template>
+      </div>
     </a-modal>
   </div>
 </template>
@@ -90,7 +155,7 @@ import { Message, Modal } from '@arco-design/web-vue'
 import { useI18n } from 'vue-i18n'
 import ModelCapabilityModal from '@/components/ModelCapabilityModal.vue'
 import api from '@/api'
-import { probeRunnable, probeNeedsInput, probeBulkRunnable, buildProbeInput } from '@/utils/modelProbe'
+import { probeRunnable, probeNeedsInput, probeBulkRunnable, buildProbeInput, probeProducesMedia } from '@/utils/modelProbe'
 import { classifyModel, groupModelsByCategory, modelCategoryColor, modelCategoryLabel, modelCategoryRank, modelOperations, modelOperationLabel } from '@/utils/modelCategory'
 
 const { locale } = useI18n()
@@ -98,7 +163,8 @@ const label = (zh, en) => locale.value === 'en' ? en : zh
 const selectedProbeOperations = ref({})
 const probeRecord = ref(null)
 const probeInputOperation = ref('')
-const probeDraft = ref({ audio: '', image: '', prompt: '' })
+const probeDraft = ref({ audio: '', image: '', prompt: '', input: '', voice: '', speed: '', response_format: 'wav', size: '1024x1024', n: 1 })
+const probeResultMedia = ref([])
 const capabilityRecord = ref(null)
 const capabilitySaving = ref(false)
 const loading = ref(false)
@@ -128,6 +194,41 @@ const columns = computed(() => [
   { title: label('状态', 'Status'), slotName: 'status', width: 80 },
   { title: label('验证', 'Probe'), slotName: 'actions', fixed: narrowViewport.value ? undefined : 'right', width: 200 },
 ])
+
+const probeModalTitle = computed(() => {
+  if (probeInputOperation.value === 'audio.speech') return label('语音合成调试', 'Speech synthesis probe')
+  if (probeInputOperation.value === 'image.generate') return label('文生图调试', 'Image generation probe')
+  return label('填写探测输入并确认费用', 'Provide probe input and confirm cost')
+})
+const probeWarning = computed(() => {
+  if (probeInputOperation.value === 'audio.speech') return label('将用这里的文本和音色向该渠道发起真实语音合成，可能产生费用；生成结果会直接显示在下方。', 'This sends a real speech request with the text and voice above and may incur charges; the audio result is shown below.')
+  if (probeInputOperation.value === 'image.generate') return label('将用这里的提示词向该渠道发起真实生图请求，可能产生费用；生成结果会直接显示在下方。', 'This sends a real image request with the prompt above and may incur charges; the image result is shown below.')
+  return label('将向该渠道发送真实媒体请求并可能产生费用。仅使用有权处理的公网媒体 URL。', 'This sends a real media request and may incur charges. Use a public media URL you are authorized to process.')
+})
+const voiceHint = computed(() => {
+  const name = String(probeRecord.value?.model_name || '')
+  if (probeInputOperation.value === 'audio.speech' && name.includes('cosyvoice')) {
+    return label('百炼 CosyVoice 常用音色：longwan（龙婉）、longyu（龙宇）、longfei（龙飞）等，以渠道实际支持为准。', 'CosyVoice common voices: longwan, longyu, longfei, etc. — subject to your channel.')
+  }
+  return ''
+})
+
+function mediaSrc(item) {
+  if (item.base64) return `data:${item.mime_type || 'application/octet-stream'};base64,${item.base64}`
+  return item.description || ''
+}
+
+// 从本地 txt/md 文件读取文本填入探测输入，避免手动粘贴长文本。
+function importTextFile(file) {
+  const reader = new FileReader()
+  reader.onload = () => {
+    const text = String(reader.result || '')
+    if (probeInputOperation.value === 'image.generate') probeDraft.value.prompt = text
+    else if (probeInputOperation.value === 'audio.speech') probeDraft.value.input = text
+  }
+  reader.readAsText(file, 'utf-8')
+  return false
+}
 
 // categoryGroups powers the filter tabs; counts are computed over the full catalog.
 const categoryGroups = computed(() => groupModelsByCategory(models.value, item => item.model_name, locale.value)
@@ -174,9 +275,11 @@ async function runOneTest(record, input, operation = probeOperation(record)) {
   try {
     const { data } = await api.post(`/api/channel/test_operation/${record.channel_id}`, { model: record.model_name, operation, confirm_cost: true, ...(input ? { input } : {}) })
     if (data.status === 'unsupported_probe') return { skipped: true, message: label('使用调用示例验证', 'Verify using an API example') }
+    const media = Array.isArray(data.data?.media) ? data.data.media : []
+    const seconds = Number(data.data?.time || data.time || 0)
     return data.success
-      ? { success: true, message: `可用 · ${Number(data.time || 0).toFixed(2)} 秒` }
-      : { success: false, message: data.message || '不可用' }
+      ? { success: true, message: `可用 · ${seconds.toFixed(2)} 秒`, media }
+      : { success: false, message: data.message || '不可用', media }
   } catch (error) {
     return { success: false, message: error.response?.data?.message || error.message || '测试失败' }
   }
@@ -209,7 +312,8 @@ function testModel(record) {
   if (probeNeedsInput(record, probeOperation(record))) {
     probeRecord.value = record
     probeInputOperation.value = probeOperation(record)
-    probeDraft.value = { audio: '', image: '', prompt: '' }
+    probeDraft.value = { audio: '', image: '', prompt: '', input: '', voice: '', speed: '', response_format: 'wav', size: '1024x1024', n: 1 }
+    probeResultMedia.value = []
     return
   }
   Modal.confirm({ title: label('确认模型调用测试', 'Confirm model probe'), content: label('该测试会向上游发送真实请求并可能产生费用。是否继续？', 'This probe sends a real upstream request and may incur charges. Continue?'), onOk: async () => {
@@ -224,10 +328,22 @@ async function submitInputProbe() {
   try { input = buildProbeInput(probeInputOperation.value, probeDraft.value) }
   catch (error) { Message.error(error.message); return false }
   const record = probeRecord.value
+  const isMedia = probeProducesMedia(probeInputOperation.value)
   testingKey.value = record.rowKey
-  try { testResults.value[record.rowKey] = await runOneTest(record, input, probeInputOperation.value) }
-  finally { testingKey.value = ''; probeRecord.value = null }
-  return true
+  try {
+    const result = await runOneTest(record, input, probeInputOperation.value)
+    testResults.value[record.rowKey] = result
+    if (isMedia) {
+      probeResultMedia.value = result.media || []
+      // 生成类探测保持弹窗打开以展示预览；返回 false 阻止 a-modal 自动关闭。
+      return false
+    }
+    probeRecord.value = null
+    return false
+  } catch (error) {
+    probeRecord.value = null
+    return false
+  } finally { testingKey.value = '' }
 }
 
 // 一键测试当前筛选出的全部模型。用有界并发避免打爆上游；停止时已发出的请求
@@ -314,5 +430,11 @@ onMounted(loadModels)
 .pending { color: var(--color-text-3); }
 .success { color: rgb(var(--green-6)); }
 .failure { color: rgb(var(--red-6)); }
+.probe-file-import { display: inline-block; margin-top: 8px; }
+.probe-media-preview { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-border-2); }
+.preview-title { margin-bottom: 10px; font-weight: 600; }
+.probe-audio { width: 100%; }
+.probe-image-wrap { margin-bottom: 12px; text-align: center; }
+.probe-image { max-width: 100%; max-height: 420px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
 @media (max-width: 640px) { .model-catalog-page { padding: 16px; } .page-header { flex-direction: column; } .category-filter { flex-basis: 100%; width: 100%; } }
 </style>
