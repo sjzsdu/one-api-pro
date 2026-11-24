@@ -120,11 +120,11 @@ onUnmounted(() => window.removeEventListener('resize', updateViewport))
 
 const columns = computed(() => [
   { title: label('模型', 'Model'), slotName: 'model', width: 300 },
+  { title: label('渠道', 'Channel'), slotName: 'channel', width: 170 },
   { title: label('类型', 'Category'), slotName: 'category', width: 100 },
   { title: label('能力', 'Capabilities'), slotName: 'capabilities', width: 250 },
   { title: label('上下文', 'Context'), dataIndex: 'contextLabel', width: 100 },
   { title: label('上游参考价格', 'Reference price'), slotName: 'pricing', width: 165 },
-  { title: label('渠道', 'Channel'), slotName: 'channel', width: 170 },
   { title: label('状态', 'Status'), slotName: 'status', width: 80 },
   { title: label('验证', 'Probe'), slotName: 'actions', fixed: narrowViewport.value ? undefined : 'right', width: 200 },
 ])
