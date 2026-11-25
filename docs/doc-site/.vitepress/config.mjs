@@ -15,11 +15,11 @@ const ICON_RELEASE =
 
 // Build the footer right-hand action links with icons.
 function footerActions(lang) {
-  const releasesHref = lang === 'zh' ? '/changelog/index' : '/en/changelog/index'
+  const releasesHref = lang === 'zh' ? '/docs/changelog/index' : '/docs/en/changelog/index'
   const releasesText = lang === 'zh' ? '版本发布' : 'Releases'
   return (
     '<span class="op-footer-actions">' +
-    `<a class="op-footer-link" href="https://oneapi.wnbgj.com/" target="_blank" rel="noreferrer">${ICON_SITE}<span>oneapi.wnbgj.com</span></a>` +
+    `<a class="op-footer-link" href="https://oneapi.wnbgj.com/docs/" target="_blank" rel="noreferrer">${ICON_SITE}<span>oneapi.wnbgj.com/docs</span></a>` +
     `<a class="op-footer-link" href="https://github.com/sjzsdu/one-api-pro" target="_blank" rel="noreferrer">${ICON_GITHUB}<span>GitHub</span></a>` +
     `<a class="op-footer-link" href="${releasesHref}">${ICON_RELEASE}<span>${releasesText}</span></a>` +
     '</span>'
@@ -41,6 +41,7 @@ const CATEGORY_LABELS = {
   install: ['安装与更新', 'Install & Upgrade'],
   user: ['用户', 'User'],
   channel: ['渠道', 'Channel'],
+  media: ['多模态与媒体', 'Multimodal & Media'],
   subscription: ['订阅（Token Plan）', 'Subscription'],
   redemption: ['兑换码', 'Redemption'],
   pricing: ['定价', 'Pricing'],
@@ -78,6 +79,7 @@ const PAGES = {
     orders: ['我的订单', 'My Orders'],
     chat: ['Chat Playground', 'Chat Playground'],
     'user-management': ['用户管理（管理员）', 'User Management (Admin)'],
+    'model-alias': ['模型别名与模型池', 'Model Aliases & Pools'],
   },
   channel: {
     overview: ['渠道概览', 'Channel Overview'],
@@ -86,6 +88,12 @@ const PAGES = {
     'channel-test': ['渠道连通性测试', 'Channel Test'],
     'balance-update': ['余额自动更新', 'Balance Update'],
     'provider-list': ['Provider 全清单', 'Provider List'],
+  },
+  media: {
+    overview: ['多模态网关总览', 'Gateway Overview'],
+    'image-audio': ['图像、语音与重排接口', 'Image, Audio & Rerank'],
+    'video-realtime': ['视频任务与实时语音', 'Video Jobs & Realtime'],
+    'settlement-probe': ['账务结算与巡检', 'Settlement & Probes'],
   },
   subscription: {
     overview: ['订阅概览', 'Subscription Overview'],
@@ -187,6 +195,7 @@ const PAGES = {
 
 // Changelog is generated dynamically from the files present.
 const CHANGELOG_VERSIONS = [
+  'v0.0.29', 'v0.0.28', 'v0.0.27',
   'v0.0.21', 'v0.0.20', 'v0.0.18', 'v0.0.17', 'v0.0.16', 'v0.0.15',
   'v0.0.13', 'v0.0.12', 'v0.0.10', 'v0.0.9', 'v0.0.8', 'v0.0.7',
   'v0.0.6', 'v0.0.5', 'v0.0.4', 'v0.0.3', 'v0.0.2', 'v0.0.1',
@@ -229,6 +238,7 @@ function buildNav(lang) {
         { text: '安装', link: '/install/docker-deploy' },
         { text: '用户', link: '/user/registration' },
         { text: '渠道', link: '/channel/overview' },
+        { text: '多模态', link: '/media/overview' },
         { text: '订阅', link: '/subscription/overview' },
         { text: '兑换码', link: '/redemption/overview' },
         { text: '定价', link: '/pricing/model-price' },
@@ -244,6 +254,7 @@ function buildNav(lang) {
         { text: 'Install', link: '/en/install/docker-deploy' },
         { text: 'User', link: '/en/user/registration' },
         { text: 'Channel', link: '/en/channel/overview' },
+        { text: 'Multimodal', link: '/en/media/overview' },
         { text: 'Subscription', link: '/en/subscription/overview' },
         { text: 'Redemption', link: '/en/redemption/overview' },
         { text: 'Pricing', link: '/en/pricing/model-price' },
@@ -258,6 +269,7 @@ function buildNav(lang) {
 }
 
 export default defineConfig({
+  base: '/docs/',
   title: 'One API Pro Docs',
   description: 'LLM 聚合网关与商业化平台 · 文档',
   srcDir: 'docs',
@@ -265,7 +277,7 @@ export default defineConfig({
   // Synced files are untracked by git, so lastUpdated would be empty.
   lastUpdated: false,
   head: [
-    ['link', { rel: 'icon', type: 'image/png', href: '/logo.png' }],
+    ['link', { rel: 'icon', type: 'image/png', href: '/docs/logo.png' }],
     ['meta', { name: 'theme-color', content: '#6d5efc' }],
     [
       'meta',
