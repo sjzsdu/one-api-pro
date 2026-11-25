@@ -118,3 +118,24 @@ Non-admin users get `403 Forbidden` if they try this.
 | Token subnet restriction | 403 | `{"success":false,"message":"该令牌只能在指定网段使用：xxx，当前 ip：xxx"}` |
 | Token model restriction | 403 | `{"success":false,"message":"该令牌无权使用模型：xxx"}` |
 | Non-admin specifying channel | 403 | `{"success":false,"message":"普通用户不支持指定渠道"}` |
+
+## Appendix B: Multimodal and media endpoints
+
+Native multimodal and media endpoints sit outside the OpenAI-compatible surface. They are routed by **operation + execution mode** and backed by persistent billing reservations.
+
+| Capability | Endpoint |
+|------|------|
+| Text to image | `POST /v1/images/generations` |
+| Image editing | `POST /v1/images/edits` |
+| Text to speech | `POST /v1/audio/speech` |
+| Speech recognition | `POST /v1/audio/transcriptions` |
+| Rerank | `POST /v1/rerank` |
+| Video generation (async) | `POST /v1/media/jobs` |
+| Realtime voice | `GET /v1/realtime` (WebSocket) |
+| Look up a sync request | `GET /v1/inferences/:id` |
+| Available models and capabilities | `GET /api/model/options` |
+| Capability override | `PUT /api/model/capabilities` |
+| Admin reconciliation | `POST /api/inference/settlements/:id/reconcile`, `POST /api/inference/jobs/:id/reconcile` |
+
+See [Multimodal & Media](../media/overview) for call examples, limits and billing rules.
+
