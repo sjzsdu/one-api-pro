@@ -53,6 +53,10 @@ func SetApiRouter(router *gin.Engine) {
 			selfRoute.Use(middleware.UserAuth())
 			{
 				selfRoute.GET("/dashboard", controller.GetUserDashboard)
+				// 用户侧供应商用量：按真实渠道归属统计，不再靠模型名猜测。
+				// User-side provider usage: attributed by the real channel, not guessed from model names.
+				// 版本: v0.0.28
+				selfRoute.GET("/provider-usage", controller.GetUserProviderUsage)
 				selfRoute.GET("/self", controller.GetSelf)
 				selfRoute.PUT("/self", controller.UpdateSelf)
 				selfRoute.DELETE("/self", controller.DeleteSelf)
