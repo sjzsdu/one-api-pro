@@ -434,13 +434,13 @@ The full API reference lives at [docs/API.md](docs/API.md), covering:
 
 ### 🐳 Docker Image (self-hosted)
 
-Tagged releases are published to **Docker Hub `sjzsdu/one-api-pro`** and, as a backup source, to `ghcr.io/<owner>/one-api-pro`. Both are multi-arch images (`linux/amd64` + `linux/arm64`) with a built-in `HEALTHCHECK` on `/api/status`. Pin a version tag in production (for example `sjzsdu/one-api-pro:v0.0.28`) rather than `latest`.
+Tagged releases are published to **Docker Hub `sjzsdu/one-api-pro`** and, as a backup source, to `ghcr.io/<owner>/one-api-pro`. Both are multi-arch images (`linux/amd64` + `linux/arm64`) with a built-in `HEALTHCHECK` on `/api/status`. Pin a version tag in production (for example `sjzsdu/one-api-pro:v0.0.29`) rather than `latest`.
 
 ```bash
 docker run -d --name one-api-pro \
   --env-file .env --env-file .env.secrets \
   -v one-api-pro-data:/app/data \
-  sjzsdu/one-api-pro:v0.0.28
+  sjzsdu/one-api-pro:v0.0.29
 ```
 
 Before exposing the service publicly, set `SESSION_SECRET`, `INITIAL_ROOT_PASSWORD` (in `.env.secrets`), `REGISTER_ENABLED=false` and `PASSWORD_REGISTER_ENABLED=false`. Use `SQL_DSN=postgres://...` for a shared PostgreSQL database. The container only needs the `/app/data` volume and an HTTP reverse proxy in front of it — no port has to be published directly.
