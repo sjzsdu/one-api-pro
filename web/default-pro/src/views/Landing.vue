@@ -9,10 +9,11 @@
           <a href="#features">{{ $t('landing.navFeatures') }}</a>
           <a href="#scenarios">{{ $t('landing.navScenarios') }}</a>
           <a href="#compare">{{ $t('landing.navCompare') }}</a>
+          <a href="#multimodal">{{ $t('landing.navMultimodal') }}</a>
           <a href="#models">{{ $t('landing.navModels') }}</a>
           <a href="#download">{{ $t('landing.navDownload') }}</a>
           <a href="#faq">{{ $t('landing.navFaq') }}</a>
-          <a href="https://oneapi.wnbgj.com/" target="_blank">{{ $t('landing.navDocs') }}</a>
+          <a href="https://oneapi.wnbgj.com/docs/" target="_blank">{{ $t('landing.navDocs') }}</a>
         </div>
         <div class="nav-actions">
           <LangSwitcher size="small" width="110px" />
@@ -67,11 +68,11 @@
             </a-button>
           </div>
           <div class="hero-counts">
-            <div class="count-item"><strong>30+</strong><span>{{ $t('landing.countPlatforms') }}</span></div>
+            <div class="count-item"><strong>40+</strong><span>{{ $t('landing.countPlatforms') }}</span></div>
             <div class="count-divider"></div>
             <div class="count-item"><strong>100%</strong><span>{{ $t('landing.countOpenAI') }}</span></div>
             <div class="count-divider"></div>
-            <div class="count-item"><strong>MIT</strong><span>{{ $t('landing.countLicense') }}</span></div>
+            <div class="count-item"><strong>6</strong><span>{{ $t('landing.countMedia') }}</span></div>
           </div>
         </div>
         <div class="hero-visual">
@@ -168,6 +169,22 @@
       </div>
     </section>
 
+    <section id="multimodal" class="section">
+      <div class="section-header">
+        <span class="section-label">{{ $t('landing.multimodalLabel') }}</span>
+        <h2>{{ $t('landing.multimodalTitle') }}</h2>
+        <p>{{ $t('landing.multimodalSubtitle') }}</p>
+      </div>
+      <div class="mm-grid">
+        <div class="mm-card" v-for="op in mmOps" :key="op.title">
+          <component :is="op.icon" class="mm-icon" :style="{ color: op.color, background: op.color + '15' }" />
+          <h3>{{ op.title }}</h3>
+          <p>{{ op.desc }}</p>
+          <code class="mm-endpoint">{{ op.endpoint }}</code>
+        </div>
+      </div>
+    </section>
+
     <section id="models" class="section section-alt">
       <div class="section-header">
         <span class="section-label">{{ $t('landing.modelsLabel') }}</span>
@@ -241,7 +258,7 @@
           <h4>{{ $t('landing.footerDocs') }}</h4>
           <a href="#features">{{ $t('landing.footerAdvantages') }}</a>
           <a href="#compare">{{ $t('landing.footerCompare') }}</a>
-          <a href="https://oneapi.wnbgj.com/" target="_blank">{{ $t('landing.footerOnlineDocs') }}</a>
+          <a href="https://oneapi.wnbgj.com/docs/" target="_blank">{{ $t('landing.footerOnlineDocs') }}</a>
         </div>
       </div>
       <div class="footer-bottom">
@@ -257,7 +274,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useStatusStore } from '@/stores/status'
-import { IconDashboard, IconApps, IconLock, IconCloud, IconThunderbolt, IconTool, IconCode, IconGithub, IconRight, IconDown, IconCheckCircleFill } from '@arco-design/web-vue/es/icon'
+import { IconDashboard, IconApps, IconLock, IconCloud, IconThunderbolt, IconTool, IconCode, IconGithub, IconRight, IconDown, IconCheckCircleFill, IconBranch, IconSync, IconMessage, IconImage, IconSound, IconOrderedList, IconVideoCamera } from '@arco-design/web-vue/es/icon'
 import { PROVIDERS } from '@/constants/providers'
 import LangSwitcher from '@/components/LangSwitcher.vue'
 import logoPng from '@/assets/logo.png'
@@ -285,6 +302,17 @@ const features = computed(() => [
   { icon: IconThunderbolt, title: t('landing.featureHA'), desc: t('landing.featureHADesc'), color: '#722ED1' },
   { icon: IconCloud, title: t('landing.featureApi'), desc: t('landing.featureApiDesc'), color: '#0FC6C2' },
   { icon: IconDashboard, title: t('landing.featureOps'), desc: t('landing.featureOpsDesc'), color: '#F53F3F' },
+  { icon: IconBranch, title: t('landing.featureAlias'), desc: t('landing.featureAliasDesc'), color: '#3491FA' },
+  { icon: IconSync, title: t('landing.featureInference'), desc: t('landing.featureInferenceDesc'), color: '#F7BA1E' },
+])
+
+const mmOps = computed(() => [
+  { icon: IconMessage, title: t('landing.mmText'), desc: t('landing.mmTextDesc'), endpoint: t('landing.mmTextEndpoint'), color: '#165DFF' },
+  { icon: IconApps, title: t('landing.mmEmbedding'), desc: t('landing.mmEmbeddingDesc'), endpoint: t('landing.mmEmbeddingEndpoint'), color: '#722ED1' },
+  { icon: IconImage, title: t('landing.mmImage'), desc: t('landing.mmImageDesc'), endpoint: t('landing.mmImageEndpoint'), color: '#00B42A' },
+  { icon: IconSound, title: t('landing.mmAudio'), desc: t('landing.mmAudioDesc'), endpoint: t('landing.mmAudioEndpoint'), color: '#FF7D00' },
+  { icon: IconOrderedList, title: t('landing.mmRerank'), desc: t('landing.mmRerankDesc'), endpoint: t('landing.mmRerankEndpoint'), color: '#0FC6C2' },
+  { icon: IconVideoCamera, title: t('landing.mmVideo'), desc: t('landing.mmVideoDesc'), endpoint: t('landing.mmVideoEndpoint'), color: '#F53F3F' },
 ])
 
 const compareItems = computed(() => [
@@ -295,6 +323,9 @@ const compareItems = computed(() => [
   { label: t('landing.compareClusterLabel'), old: t('landing.compareClusterOld'), new: t('landing.compareClusterNew') },
   { label: t('landing.compareAdminLabel'), old: t('landing.compareAdminOld'), new: t('landing.compareAdminNew') },
   { label: t('landing.compareUpdateLabel'), old: t('landing.compareUpdateOld'), new: t('landing.compareUpdateNew') },
+  { label: t('landing.compareMediaLabel'), old: t('landing.compareMediaOld'), new: t('landing.compareMediaNew') },
+  { label: t('landing.compareAliasLabel'), old: t('landing.compareAliasOld'), new: t('landing.compareAliasNew') },
+  { label: t('landing.compareAsyncLabel'), old: t('landing.compareAsyncOld'), new: t('landing.compareAsyncNew') },
 ])
 
 const faqs = computed(() => [
@@ -303,6 +334,8 @@ const faqs = computed(() => [
   { q: t('landing.faq3Q'), a: t('landing.faq3A') },
   { q: t('landing.faq4Q'), a: t('landing.faq4A') },
   { q: t('landing.faq5Q'), a: t('landing.faq5A') },
+  { q: t('landing.faq6Q'), a: t('landing.faq6A') },
+  { q: t('landing.faq7Q'), a: t('landing.faq7A') },
 ])
 
 const models = PROVIDERS
@@ -408,20 +441,28 @@ onMounted(async () => {
 .section-header p { font-size: 16px; color: #86909c; }
 
 /* Features */
-.feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.feature-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
 .feature-item { padding: 36px 28px; border-radius: 16px; background: #fff; border: 1px solid #f2f3f5; transition: all .3s; }
 .feature-item:hover { border-color: #165dff20; box-shadow: 0 8px 30px rgba(0,0,0,0.06); transform: translateY(-2px); }
 .fi-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 20px; }
 .feature-item h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
 .feature-item p { font-size: 14px; color: #86909c; line-height: 1.7; }
 
-/* Scenarios */
-.scenario-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+/* Scenarios */.scenario-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
 .scenario-card { padding: 36px 24px; border-radius: 16px; background: #fff; border: 1px solid #e5e6eb; text-align: center; transition: all .3s; }
 .scenario-card:hover { border-color: #165dff40; box-shadow: 0 4px 20px rgba(0,0,0,0.06); transform: translateY(-2px); }
 .sc-icon { font-size: 32px; color: #165dff; margin-bottom: 16px; }
 .scenario-card h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
 .scenario-card p { font-size: 13px; color: #86909c; line-height: 1.7; }
+
+/* Multimodal */
+.mm-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.mm-card { padding: 32px 28px; border-radius: 16px; background: #fff; border: 1px solid #f2f3f5; transition: all .3s; display: flex; flex-direction: column; align-items: flex-start; }
+.mm-card:hover { border-color: #165dff20; box-shadow: 0 8px 30px rgba(0,0,0,0.06); transform: translateY(-2px); }
+.mm-icon { width: 44px; height: 44px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 18px; }
+.mm-card h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+.mm-card p { font-size: 14px; color: #86909c; line-height: 1.7; margin-bottom: 16px; }
+.mm-endpoint { display: inline-block; padding: 5px 10px; border-radius: 6px; background: #f7f8fa; color: #4e5969; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
 
 /* Models */
 .model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
@@ -523,12 +564,17 @@ onMounted(async () => {
 .footer-bottom { max-width: 1280px; margin: 0 auto; text-align: center; font-size: 12px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 24px; }
 .footer-bottom a { color: rgba(255,255,255,0.4); }
 
+@media (max-width: 1100px) {
+  .feature-grid, .mm-grid { grid-template-columns: repeat(2, 1fr); }
+  .scenario-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
 @media (max-width: 768px) {
   .nav-menu, .nav-actions .a-btn:first-child { display: none; }
   .hero-inner { flex-direction: column; gap: 40px; }
   .hero-text h1 { font-size: 34px; }
   .hero-visual { flex: none; width: 100%; max-width: 400px; }
-  .feature-grid, .scenario-grid, .download-grid { grid-template-columns: 1fr; }
+  .feature-grid, .scenario-grid, .download-grid, .mm-grid { grid-template-columns: 1fr; }
   .compare-col-label { flex: 0 0 100px; font-size: 12px; padding: 14px 12px; }
   .compare-col { padding: 14px 12px; }
   .footer-inner { flex-direction: column; gap: 32px; }
