@@ -90,6 +90,16 @@
           <div v-else class="chart-empty">{{ $t('dash.noData') }}</div>
         </div>
 
+        <!-- 供应商分布 -->
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">{{ $t('providerPage.sectionShare') }}</h2>
+            <span class="panel-extra">{{ $t('providerPage.statProviders') }} {{ providerUsage.length }}</span>
+          </div>
+          <v-chart v-if="providerUsage.length > 0" :option="providerPieOption" :style="{ height: '320px' }" autoresize />
+          <div v-else class="chart-empty">{{ $t('dash.noData') }}</div>
+        </div>
+
         <!-- 使用明细 -->
         <div class="panel no-pad">
           <div class="panel-head pad-head">
@@ -110,6 +120,10 @@
                 <ModelIcon :slug="record.provider_slug" :name="record.model_name" :size="20" />
                 <span class="model-name">{{ record.model_name }}</span>
               </div>
+            </template>
+            <template #provider="{ record }">
+              <span v-if="record.provider_name">{{ record.provider_name }}</span>
+              <span v-else class="cell-mono">—</span>
             </template>
             <template #date="{ record }">
               <span class="cell-mono">{{ record.day }}</span>
@@ -324,6 +338,7 @@ import ModelIcon from '@/components/ModelIcon.vue'
 import TopupModal from '@/components/TopupModal.vue'
 import settingApi from '@/api/setting'
 import { findProviderByName } from '@/constants/providers'
+import providerApi from '@/api/provider'
 import { formatQuota as formatQuotaYuan } from '@/utils/quota'
 
 const authStore = useAuthStore()
@@ -379,6 +394,21 @@ const sevendayResetTime = ref('')
 const chartData = ref({ requests: [], quota: [], tokens: [] })
 const details = ref([])
 const barModels = ref([])
+// providerUsage 当前用户按供应商拆分的用量（真实渠道归属）。
+// The current user's usage grouped by provider, attributed by the real channel.
+const providerUsage = ref([])
+
+// modelProviderMap 模型名 → 真实供应商（后端按渠道归属返回）。
+// Maps a model name to the provider that actually served it.
+const modelProviderMap = computed(() => {
+  const map = {}
+  for (const item of providerUsage.value || []) {
+    for (const name of item.models || []) {
+      map[name] = { provider_id: item.provider_id, provider_name: item.provider_name }
+    }
+  }
+  return map
+})
 const modelColors = ['#165dff', '#00b42a', '#ff7d00', '#f53f3f', '#722ed1', '#0fc6c2']
 
 const maskedApiKey = computed(() => {
@@ -481,6 +511,7 @@ const quickActions = computed(() => [
 
 const columns = computed(() => [
   { title: t('dash.model'), dataIndex: 'model_name', slotName: 'model', width: 220, ellipsis: true, tooltip: true },
+  { title: t('providerPage.colProvider'), dataIndex: 'provider_name', slotName: 'provider', width: 150, ellipsis: true, tooltip: true },
   { title: t('dash.date'), dataIndex: 'day', slotName: 'date', width: 120 },
   { title: t('dash.requests'), dataIndex: 'request_count', slotName: 'requests', width: 110, align: 'right' },
   { title: t('dash.quotaUsage'), dataIndex: 'quota', slotName: 'quota', width: 120, align: 'right' },
@@ -618,6 +649,45 @@ const barOption = computed(() => {
       axisTick: { show: false },
     },
     series,
+  }
+})
+
+// providerPieOption 供应商费用占比饼图（真实渠道归属）。
+// Provider cost-share pie chart, attributed by the real channel.
+const providerPieOption = computed(() => {
+  const items = (providerUsage.value || []).filter((item) => (item.amount || 0) > 0)
+  if (!items.length) return null
+  return {
+    color: modelColors,
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: '#1d2129',
+      borderWidth: 0,
+      textStyle: { color: '#fff', fontSize: 12 },
+      formatter: (p) => `${p.name}<br/>¥${Number(p.value).toFixed(4)} (${p.percent}%)`,
+    },
+    legend: {
+      bottom: 0,
+      left: 'center',
+      type: 'scroll',
+      icon: 'roundRect',
+      itemWidth: 10,
+      itemHeight: 10,
+      textStyle: { fontSize: 11, color: '#86909c' },
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['42%', '66%'],
+        center: ['50%', '44%'],
+        itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 },
+        label: { show: false },
+        data: items.map((item) => ({
+          name: item.provider_name || item.provider_id,
+          value: item.amount,
+        })),
+      },
+    ],
   }
 })
 
@@ -852,9 +922,15 @@ async function loadDashboard() {
         },
       }).catch(() => ({ data: { success: true, data: {} } })),
       api.get('/api/notice').catch(() => ({ data: { success: true, data: '' } })),
+      // 供应商用量：按真实渠道归属统计，不再靠模型名猜测。
+      // Provider usage attributed by the real channel, not guessed from model names.
+      providerApi.myUsage(start, end).catch(() => ({ data: { success: true, data: [] } })),
     ]
 
-    const [dashRes, statRes, noticeRes] = await Promise.all(requests)
+    const [dashRes, statRes, noticeRes, providerRes] = await Promise.all(requests)
+
+    // 0. 供应商用量
+    if (providerRes.data?.success) providerUsage.value = providerRes.data.data || []
 
     // 1. 公告
     if (noticeRes.data?.success) notice.value = noticeRes.data.data || ''
@@ -975,10 +1051,17 @@ function buildCharts(logs) {
     })
     .map((d) => {
       const modelName = d.ModelName ?? d.model_name ?? ''
+      // 品牌图标仍按模型名猜测（lobehub 图标按品牌命名），
+      // 供应商归属则用后端按真实渠道返回的结果。
+      // The icon slug stays brand-based (lobehub icons are named by brand),
+      // while the provider attribution comes from the backend's channel-based result.
       const provider = findProviderByName(modelName) || findProviderByName(modelName.split('-')[0])
+      const owner = modelProviderMap.value[modelName]
       return {
         model_name: modelName,
         provider_slug: provider?.slug || '',
+        provider_id: owner?.provider_id || '',
+        provider_name: owner?.provider_name || '',
         day: d.Day ?? d.day,
         request_count: pick(d, 'request_count', 'RequestCount'),
         quota: pick(d, 'quota', 'Quota'),
