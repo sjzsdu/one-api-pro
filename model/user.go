@@ -414,10 +414,8 @@ func GetUserEmail(id int) (email string, err error) {
 }
 
 func GetUserGroup(id int) (group string, err error) {
-	groupCol := "`group`"
-	if common.UsingPostgreSQL {
-		groupCol = `"group"`
-	}
+	// group 是保留字，列名引用必须按方言生成（PostgreSQL 不接受反引号）。
+	groupCol := groupColumnRef()
 
 	err = DB.Model(&User{}).Where("id = ?", id).Select(groupCol).Find(&group).Error
 	return group, err

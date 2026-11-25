@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelbus/one-api-pro/common"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -80,7 +81,7 @@ func main() {
 
 func migrateModelRatio(db *gorm.DB, nowTs int64) {
 	var opt Option
-	result := db.Where("`key` = ?", "ModelRatio").First(&opt)
+	result := db.Where(common.QuoteIdentifier("key")+" = ?", "ModelRatio").First(&opt)
 	if result.Error != nil {
 		fmt.Println("Option 表中无 ModelRatio 数据，跳过")
 		return
@@ -94,7 +95,7 @@ func migrateModelRatio(db *gorm.DB, nowTs int64) {
 
 	var compOpt Option
 	completionRatio := make(map[string]float64)
-	if err := db.Where("`key` = ?", "CompletionRatio").First(&compOpt).Error; err == nil {
+	if err := db.Where(common.QuoteIdentifier("key")+" = ?", "CompletionRatio").First(&compOpt).Error; err == nil {
 		json.Unmarshal([]byte(strings.ReplaceAll(compOpt.Value, "\n", "")), &completionRatio)
 	}
 
@@ -139,7 +140,7 @@ func migrateModelRatio(db *gorm.DB, nowTs int64) {
 
 func migrateGroupRatio(db *gorm.DB, nowTs int64) {
 	var opt Option
-	result := db.Where("`key` = ?", "GroupRatio").First(&opt)
+	result := db.Where(common.QuoteIdentifier("key")+" = ?", "GroupRatio").First(&opt)
 	if result.Error != nil {
 		fmt.Println("Option 表中无 GroupRatio 数据，插入默认分组")
 		defaults := []GroupPrice{

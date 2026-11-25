@@ -16,6 +16,7 @@ import (
 	"github.com/modelbus/one-api-pro/common/config"
 	"github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/common/random"
+	"gorm.io/gorm"
 )
 
 var (
@@ -27,10 +28,8 @@ var (
 )
 
 func CacheGetTokenByKey(key string) (*Token, error) {
-	keyCol := "`key`"
-	if common.UsingPostgreSQL {
-		keyCol = `"key"`
-	}
+	// key 是保留字，列名引用必须按方言生成（PostgreSQL 不接受反引号）。
+	keyCol := common.QuoteIdentifier("key")
 	var token Token
 	if !common.RedisEnabled {
 		err := DB.Where(keyCol+" = ?", key).First(&token).Error
@@ -379,13 +378,25 @@ func CacheGetRandomSatisfiedChannel(group string, model string, ignoreFirstPrior
 	return channels[idx], nil
 }
 
+// channelCandidateQuery 构建「启用渠道 + 命中分组 + 模型名子串」的候选查询。
+// Builds the candidate query (enabled channels, matching group, model substring).
+//
+// 单独抽出来是为了能用 PostgreSQL 方言做 DryRun 校验列名引用：
+// group 是保留字，硬编码 MySQL 反引号会让线上 PostgreSQL 整条 SQL 语法错误。
+//
+// 版本: v0.0.28
+// 日期: 2026-11-25
+func channelCandidateQuery(db *gorm.DB, group, modelName string) *gorm.DB {
+	return db.Where("status = ? AND (models LIKE ? OR models = '*') AND "+groupColumnRef()+" LIKE ?",
+		ChannelStatusEnabled, "%"+modelName+"%", "%"+group+"%").
+		Order("priority DESC")
+}
+
 func GetChannelCandidates(group string, modelName string) []*Channel {
 	if !config.MemoryCacheEnabled {
 		var channels []*Channel
-		err := DB.Where("status = ? AND (models LIKE ? OR models = '*') AND `group` LIKE ?",
-			ChannelStatusEnabled, "%"+modelName+"%", "%"+group+"%").
-			Order("priority DESC").
-			Find(&channels).Error
+		// 列名必须按方言引用（groupColumnRef），详见 channelCandidateQuery 注释。
+		err := channelCandidateQuery(DB, group, modelName).Find(&channels).Error
 		if err != nil {
 			logger.SysError("failed to get channel candidates: " + err.Error())
 			return nil
@@ -428,10 +439,8 @@ func GetFallbackChannel(group string) (*Channel, error) {
 		return nil, errors.New("group is empty")
 	}
 	var channels []*Channel
-	groupCol := "`group`"
-	if common.UsingPostgreSQL {
-		groupCol = `"group"`
-	}
+	// group 是保留字，列名引用必须按方言生成（PostgreSQL 不接受反引号）。
+	groupCol := groupColumnRef()
 	err := DB.Where("status = ? AND is_fallback = ? AND "+groupCol+" LIKE ?",
 		ChannelStatusEnabled, true, "%"+group+"%").
 		Order("fallback_priority DESC, id DESC").

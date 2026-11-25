@@ -61,10 +61,8 @@ func Redeem(ctx context.Context, key string, userId int) (quota int64, err error
 	}
 	redemption := &Redemption{}
 
-	keyCol := "`key`"
-	if common.UsingPostgreSQL {
-		keyCol = `"key"`
-	}
+	// key 是保留字，列名引用必须按方言生成（PostgreSQL 不接受反引号）。
+	keyCol := common.QuoteIdentifier("key")
 
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(keyCol+" = ?", key).First(redemption).Error

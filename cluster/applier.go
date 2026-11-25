@@ -130,10 +130,11 @@ func applyUpsertAbility(db *gorm.DB, event model.SyncEvent, now int64) {
 
 	// 检查主键是否已存在
 	var count int64
-	db.Table("abilities").Where("`group` = ? AND model = ? AND channel_id = ?", group, model_, channelId).Count(&count)
+	abilityGroupCol := common.QuoteIdentifier("group")
+	db.Table("abilities").Where(abilityGroupCol+" = ? AND model = ? AND channel_id = ?", group, model_, channelId).Count(&count)
 	if count > 0 {
 		// 已存在：更新
-		db.Table("abilities").Where("`group` = ? AND model = ? AND channel_id = ?", group, model_, channelId).Updates(data)
+		db.Table("abilities").Where(abilityGroupCol+" = ? AND model = ? AND channel_id = ?", group, model_, channelId).Updates(data)
 		return
 	}
 
@@ -210,7 +211,7 @@ func applyDelete(db *gorm.DB, event model.SyncEvent) {
 			model_, _ := data["model"].(string)
 			channelId, _ := toInt64(data["channel_id"])
 			if group != "" && model_ != "" && channelId > 0 {
-				db.Table("abilities").Where("`group` = ? AND model = ? AND channel_id = ?", group, model_, channelId).Delete(nil)
+				db.Table("abilities").Where(common.QuoteIdentifier("group")+" = ? AND model = ? AND channel_id = ?", group, model_, channelId).Delete(nil)
 			}
 		}
 		return
@@ -218,7 +219,7 @@ func applyDelete(db *gorm.DB, event model.SyncEvent) {
 	if event.RowId > 0 {
 		db.Table(event.TableName).Where("id = ?", event.RowId).Delete(nil)
 	} else if event.RowKey != "" {
-		db.Table(event.TableName).Where("`key` = ?", event.RowKey).Delete(nil)
+		db.Table(event.TableName).Where(common.QuoteIdentifier("key")+" = ?", event.RowKey).Delete(nil)
 	} else {
 		// 防御性：row_id 和 row_key 都为空，说明发送方的 Delete 函数有 bug
 		// （如 DB.Where("id = ?", id).Delete(&Model{}) 模式，Model 零值导致 GORM 回调取不到 Id）
@@ -260,9 +261,10 @@ func applyUpsertOptions(db *gorm.DB, event model.SyncEvent, now int64) {
 		return
 	}
 	var count int64
-	db.Table("options").Where("`key` = ?", key).Count(&count)
+	optionsKeyCol := common.QuoteIdentifier("key")
+	db.Table("options").Where(optionsKeyCol+" = ?", key).Count(&count)
 	if count > 0 {
-		db.Table("options").Where("`key` = ?", key).Updates(map[string]interface{}{
+		db.Table("options").Where(optionsKeyCol+" = ?", key).Updates(map[string]interface{}{
 			"value":      value,
 			"updated_at": now,
 		})

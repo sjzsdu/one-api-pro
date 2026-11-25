@@ -356,7 +356,9 @@ func UpdateChannelStatusById(id int, status int) {
 	// 先取出渠道所属分组，状态变更后失效其 group_models 缓存，
 	// 否则启用/停用（含监控自动禁用）后令牌页可用模型会 stale 一个缓存周期。
 	var groups []string
-	DB.Model(&Channel{}).Where("id = ?", id).Distinct("`group`").Pluck("`group`", &groups)
+	// 与 GetChannelCandidates 同一类方言问题：列名必须按 MySQL/PostgreSQL 分别引用，
+	// 否则 PostgreSQL 下这里的查询同样语法错误，groups 恒为空、分组模型缓存失效不了。
+	DB.Model(&Channel{}).Where("id = ?", id).Distinct(groupColumnRef()).Pluck(groupColumnRef(), &groups)
 
 	err := UpdateAbilityStatus(id, status == ChannelStatusEnabled)
 	if err != nil {

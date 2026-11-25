@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 
+	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/helper"
 	"gorm.io/gorm"
 )
@@ -193,7 +194,7 @@ func fetchCurrentRowData(db *gorm.DB, tableName string, rowId int64, rowKey stri
 			Key   string `json:"key"`
 			Value string `json:"value"`
 		}
-		err := skipDB.Table(tableName).Where("`key` = ?", rowKey).Select("`key`, `value`").Scan(&opt).Error
+		err := skipDB.Table(tableName).Where(common.QuoteIdentifier("key")+" = ?", rowKey).Select(common.QuoteIdentifier("key")+", "+common.QuoteIdentifier("value")).Scan(&opt).Error
 		if err != nil {
 			return ""
 		}
@@ -204,7 +205,7 @@ func fetchCurrentRowData(db *gorm.DB, tableName string, rowId int64, rowKey stri
 	if rowId > 0 {
 		skipDB.Table(tableName).Where("id = ?", rowId).Scan(&result)
 	} else if rowKey != "" {
-		skipDB.Table(tableName).Where("`key` = ?", rowKey).Scan(&result)
+		skipDB.Table(tableName).Where(common.QuoteIdentifier("key")+" = ?", rowKey).Scan(&result)
 	}
 	if result == nil {
 		return ""

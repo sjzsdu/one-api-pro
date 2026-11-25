@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 
+	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/helper"
 )
 
@@ -71,7 +72,7 @@ func GetSystemSetting(key string) (*SystemSetting, error) {
 		return nil, errors.New("key 不能为空")
 	}
 	s := SystemSetting{Key: key}
-	if err := DB.First(&s, "`key` = ?", key).Error; err != nil {
+	if err := DB.First(&s, common.QuoteIdentifier("key")+" = ?", key).Error; err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -79,7 +80,7 @@ func GetSystemSetting(key string) (*SystemSetting, error) {
 
 func GetSystemSettingsByCategory(category string) ([]*SystemSetting, error) {
 	var ss []*SystemSetting
-	if err := DB.Where("category = ?", category).Order("`key` asc").Find(&ss).Error; err != nil {
+	if err := DB.Where("category = ?", category).Order(common.QuoteIdentifier("key") + " asc").Find(&ss).Error; err != nil {
 		return nil, err
 	}
 	return ss, nil
@@ -87,14 +88,14 @@ func GetSystemSettingsByCategory(category string) ([]*SystemSetting, error) {
 
 func GetAllSystemSettings() ([]*SystemSetting, error) {
 	var ss []*SystemSetting
-	if err := DB.Order("category asc, `key` asc").Find(&ss).Error; err != nil {
+	if err := DB.Order("category asc, " + common.QuoteIdentifier("key") + " asc").Find(&ss).Error; err != nil {
 		return nil, err
 	}
 	return ss, nil
 }
 
 func DeleteSystemSetting(key string) error {
-	return DB.Where("`key` = ?", key).Delete(&SystemSetting{}).Error
+	return DB.Where(common.QuoteIdentifier("key")+" = ?", key).Delete(&SystemSetting{}).Error
 }
 
 // GetSystemSettingString returns the Value for key, or "" if missing.

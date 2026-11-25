@@ -24,10 +24,10 @@ type Ability struct {
 
 func GetRandomSatisfiedChannel(group string, model string, ignoreFirstPriority bool) (*Channel, error) {
 	ability := Ability{}
-	groupCol := "`group`"
+	// group 是保留字，列名引用必须按方言生成（PostgreSQL 不接受反引号）。
+	groupCol := groupColumnRef()
 	trueVal := "1"
 	if common.UsingPostgreSQL {
-		groupCol = `"group"`
 		trueVal = "true"
 	}
 
@@ -141,10 +141,10 @@ func UpdateAbilityStatus(channelId int, status bool) error {
 }
 
 func GetGroupModels(ctx context.Context, group string) ([]string, error) {
-	groupCol := "`group`"
+	// group 是保留字，列名引用必须按方言生成（PostgreSQL 不接受反引号）。
+	groupCol := groupColumnRef()
 	trueVal := "1"
 	if common.UsingPostgreSQL {
-		groupCol = `"group"`
 		trueVal = "true"
 	}
 	var models []string

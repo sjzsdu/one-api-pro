@@ -10,11 +10,13 @@ import (
 // groupColumnRef 返回 group 列在 SQL 中的引用写法。
 // group 是 MySQL / PostgreSQL 的保留字，作为裸列名拼接会触发语法错误，
 // 因此统一走这个 helper（与 GetGroupModels 的处理保持一致）。
+//
+// 引用形式由 common.QuoteIdentifier 统一决定：PostgreSQL 用双引号，
+// MySQL / SQLite 用反引号（PostgreSQL 不接受反引号）。
+// 版本: v0.0.28
+// 日期: 2026-11-25
 func groupColumnRef() string {
-	if common.UsingPostgreSQL {
-		return `"group"`
-	}
-	return "`group`"
+	return common.QuoteIdentifier("group")
 }
 
 // GetAllGroupNames 返回系统中「真实存在」的全部分组名，去重后按字典序排序。

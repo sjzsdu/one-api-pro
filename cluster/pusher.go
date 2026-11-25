@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/helper"
 	"github.com/modelbus/one-api-pro/common/logger"
 	"github.com/modelbus/one-api-pro/model"
@@ -111,7 +112,7 @@ func fetchCurrentRowDataForPush(db *gorm.DB, tableName string, rowId int64, rowK
 			Key   string `json:"key"`
 			Value string `json:"value"`
 		}
-		db.Table(tableName).Where("`key` = ?", rowKey).Select("`key`, `value`").Scan(&opt)
+		db.Table(tableName).Where(common.QuoteIdentifier("key")+" = ?", rowKey).Select(common.QuoteIdentifier("key")+", "+common.QuoteIdentifier("value")).Scan(&opt)
 		if opt.Key == "" {
 			return ""
 		}
@@ -133,7 +134,7 @@ func fetchCurrentRowDataForPush(db *gorm.DB, tableName string, rowId int64, rowK
 	}
 	if rowKey != "" {
 		var result map[string]interface{}
-		db.Table(tableName).Where("`key` = ?", rowKey).Scan(&result)
+		db.Table(tableName).Where(common.QuoteIdentifier("key")+" = ?", rowKey).Scan(&result)
 		if result == nil {
 			return ""
 		}
