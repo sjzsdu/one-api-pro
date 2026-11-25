@@ -41,6 +41,12 @@ const SITE_PUBLIC = join(SITE_DOCS, 'public')
 const only = process.argv[2] // 'zh' | 'en' | undefined
 const LANGS = only ? [only] : ['zh', 'en']
 
+// NOTE: the site is mounted under /docs/ (see `base` in .vitepress/config.mjs).
+// VitePress prefixes `base` itself for markdown links, nav/sidebar entries and
+// home-page `hero.actions` / `features[].link`, so source docs keep clean
+// site-absolute paths like `/start/overview`. Only raw HTML written in the
+// config (footer links, head tags) needs an explicit /docs prefix.
+
 // Language-specific categories under docs/. Skip non-content dirs:
 // "assets" (static files), "doc-site" (the site project), "scripts",
 // and the legacy "admin" / "faq" folders emptied during the
@@ -118,9 +124,12 @@ function escapeAngleBracketsInTables(text) {
 }
 
 function syncAssets() {
-  if (!existsSync(join(DOCS, 'assets'))) return
+  // The public dir must exist even when docs/assets is absent, otherwise the
+  // hero `/logo.png` reference cannot be resolved during the VitePress build.
   mkdirSync(SITE_PUBLIC, { recursive: true })
-  copyDir(join(DOCS, 'assets'), join(SITE_PUBLIC, 'assets'))
+  if (existsSync(join(DOCS, 'assets'))) {
+    copyDir(join(DOCS, 'assets'), join(SITE_PUBLIC, 'assets'))
+  }
   // Expose the project logo at a stable public path for the home hero.
   const logo = join(DOCS, 'logo.png')
   if (existsSync(logo)) copyFileSync(logo, join(SITE_PUBLIC, 'logo.png'))
