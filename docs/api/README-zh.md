@@ -113,3 +113,24 @@ sk-xxxxxxxx-5    # 使用渠道 ID 为 5 的渠道
 | 令牌模型限制 | 403 | `{"success":false,"message":"该令牌无权使用模型：xxx"}` |
 | 普通用户指定渠道 | 403 | `{"success":false,"message":"普通用户不支持指定渠道"}` |
 
+## 附录 B：多模态与媒体接口
+
+原生多模态与媒体接口不在 OpenAI 兼容范围内，统一按“操作 + 执行模式”路由，并配套持久账务预留。
+
+| 能力 | 入口 |
+|------|------|
+| 文生图 | `POST /v1/images/generations` |
+| 图片编辑 | `POST /v1/images/edits` |
+| 语音合成 | `POST /v1/audio/speech` |
+| 语音识别 | `POST /v1/audio/transcriptions` |
+| 重排 | `POST /v1/rerank` |
+| 视频生成（异步） | `POST /v1/media/jobs` |
+| 双向实时语音 | `GET /v1/realtime`（WebSocket） |
+| 普通请求查询 | `GET /v1/inferences/:id` |
+| 可用模型与能力 | `GET /api/model/options` |
+| 能力覆盖 | `PUT /api/model/capabilities` |
+| 管理员对账 | `POST /api/inference/settlements/:id/reconcile`、`POST /api/inference/jobs/:id/reconcile` |
+
+详细调用方式、限制与账务规则见[多模态与媒体](../media/overview)。
+
+
