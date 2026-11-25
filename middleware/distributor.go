@@ -116,7 +116,7 @@ func Distribute() func(c *gin.Context) {
 					abortOperationSelection(c, operationErr)
 					return
 				}
-				message := fmt.Sprintf("当前分组 %s 下对于模型 %s 无可用渠道", userGroup, requestModel)
+				message := noChannelMessage(userGroup, requestModel, err)
 				if channel != nil {
 					logger.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
 					message = "数据库一致性已被破坏，请联系管理员"
@@ -170,6 +170,22 @@ func Distribute() func(c *gin.Context) {
 			channelrouter.DefaultRouter.ReleaseConcurrency(channel.Id)
 		}
 	}
+}
+
+// noChannelMessage 生成「无可用渠道」的对外文案。
+// Builds the client-facing message for a failed channel selection.
+//
+// 「该分组确实没有渠道」和「渠道存在但暂时不可用」是两回事，混成一句话会让
+// 上游配额打满（429 → 冷却）被误判成分组没配渠道（2026-11-24 线上事故）。
+// 候选渠道存在、但被冷却/并发/限速等条件过滤掉时，这里把真实原因一并写出。
+func noChannelMessage(userGroup, requestModel string, err error) string {
+	var noChannel *channelrouter.NoAvailableChannelError
+	if errors.As(err, &noChannel) {
+		if reason := noChannel.Reason(); reason != "" {
+			return fmt.Sprintf("当前分组 %s 下模型 %s 暂时无可用渠道（%s）", userGroup, requestModel, reason)
+		}
+	}
+	return fmt.Sprintf("当前分组 %s 下对于模型 %s 无可用渠道", userGroup, requestModel)
 }
 
 func selectChannelViaRouter(c *gin.Context, group, modelName string, userId int, ignoreFirstPriority bool) (*model.Channel, error) {

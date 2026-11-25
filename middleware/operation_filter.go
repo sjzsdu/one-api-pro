@@ -8,6 +8,7 @@ package middleware
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/config"
@@ -86,8 +87,16 @@ func channelOperationError(c *gin.Context, ch *model.Channel, name string) error
 		}
 		return false
 	}
-	if !allowed(cap.Limits.Formats, req.ResponseFormat) || !allowed(cap.Limits.Voices, req.Voice) || !allowed(cap.Limits.Sizes, req.Size) {
-		return errors.New("requested format, voice or size is not supported")
+	// 逐项校验并把「可用值」写进报错：笼统的 "not supported" 无法定位，
+	// 调用方只能反复试（例如 TTS 音色名带不带版本后缀，2026-11-25 线上踩过）。
+	if !allowed(cap.Limits.Formats, req.ResponseFormat) {
+		return fmt.Errorf("response_format %q is not supported (allowed: %s)", req.ResponseFormat, strings.Join(cap.Limits.Formats, ", "))
+	}
+	if !allowed(cap.Limits.Voices, req.Voice) {
+		return fmt.Errorf("voice %q is not supported (allowed: %s)", req.Voice, strings.Join(cap.Limits.Voices, ", "))
+	}
+	if !allowed(cap.Limits.Sizes, req.Size) {
+		return fmt.Errorf("size %q is not supported (allowed: %s)", req.Size, strings.Join(cap.Limits.Sizes, ", "))
 	}
 	if cap.Limits.MaxItems > 0 && req.N > cap.Limits.MaxItems {
 		return errors.New("requested item count exceeds model limit")

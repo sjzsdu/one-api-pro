@@ -194,7 +194,17 @@ func builtinModelCapabilities(provider, name string) ModelCapabilities {
 			c.Operations["image.edit"] = OperationCapability{Modes: []string{"sync"}, InputModalities: []string{"text", "image"}, OutputModalities: []string{"image"}, Limits: OperationLimits{MaxItems: 4}}
 		case name == "wan2.6-t2i":
 			op("image", "image.generate", []string{"sync"}, []string{"text"}, []string{"image"}, OperationLimits{MaxItems: 4})
-		case strings.HasPrefix(name, "cosyvoice-") || strings.HasPrefix(name, "qwen-audio-3.") && strings.Contains(name, "tts"):
+		case strings.HasPrefix(name, "cosyvoice-v3"):
+			// cosyvoice-v3 系列的音色名带 _v3 后缀（2026-11-25 线上实测：
+			// longanhuan_v3 / longwan_v3 / longfei_v3 可用，longyu_v3 上游报 418）。
+			op("audio", "audio.speech", []string{"sync"}, []string{"text"}, []string{"audio"}, OperationLimits{Formats: []string{"wav", "mp3", "pcm", "opus"}, Voices: []string{"longanhuan_v3", "longwan_v3", "longfei_v3"}, MaxInputCharacters: 4096, MinSpeed: .5, MaxSpeed: 2})
+		case strings.HasPrefix(name, "qwen-audio-3.") && strings.Contains(name, "tts"):
+			// qwen-audio-3.1-tts 系列的音色名带 _v3.1 后缀（2026-11-25 线上实测：
+			// longanhuan_v3.1 / longwan_v3.1 / longfei_v3.1 可用）。
+			// 误用 cosyvoice 的音色名会打到上游变成 "[cosyvoice:]Engine error [411]"，
+			// 声明白名单后网关本地就能拦下并直接告诉调用方可用音色。
+			op("audio", "audio.speech", []string{"sync"}, []string{"text"}, []string{"audio"}, OperationLimits{Formats: []string{"wav", "mp3", "pcm", "opus"}, Voices: []string{"longanhuan_v3.1", "longwan_v3.1", "longfei_v3.1"}, MaxInputCharacters: 4096, MinSpeed: .5, MaxSpeed: 2})
+		case strings.HasPrefix(name, "cosyvoice-"):
 			op("audio", "audio.speech", []string{"sync"}, []string{"text"}, []string{"audio"}, OperationLimits{Formats: []string{"wav", "mp3", "pcm", "opus"}, MaxInputCharacters: 4096, MinSpeed: .5, MaxSpeed: 2})
 		case strings.HasPrefix(name, "qwen3-vl-embedding"):
 			op("embedding", "embedding.create", []string{"sync"}, []string{"text", "image", "video"}, []string{"vector"}, OperationLimits{})

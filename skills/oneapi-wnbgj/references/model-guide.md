@@ -47,7 +47,15 @@
 ### cosyvoice-v3-flash / qwen-audio-3.1-tts-flash（百炼 TTS）
 - 网关把 OpenAI 请求转成 DashScope `SpeechSynthesizer`：
   `{"model":"cosyvoice-v3-flash","input":{"text":"...","voice":"longanhuan_v3","format":"wav","sample_rate":24000,"rate":1.1}}`
-- `speed` → `rate`（0.5–2.0）；格式 `wav/mp3/pcm/opus`，默认 wav；`voice` 必填且须与模型匹配（常用如 `longwan`/`longyu`/`longfei`/`longanhuan_v3`，以渠道实际支持为准）。
+- `speed` → `rate`（0.5–2.0）；格式 `wav/mp3/pcm/opus`，默认 wav；`voice` 必填**且必须与模型族匹配**。
+- **音色名带版本后缀，两个模型族不同（2026-11-25 线上实测）**：
+
+  | 模型 | 可用音色 | 备注 |
+  | --- | --- | --- |
+  | `cosyvoice-v3-*` | `longanhuan_v3`、`longwan_v3`、`longfei_v3` | 写成 `longwan`（无后缀）上游报 418 Invalid voice |
+  | `qwen-audio-3.1-tts-*` | `longanhuan_v3.1`、`longwan_v3.1`、`longfei_v3.1` | 用 cosyvoice 的音色名上游报 `[cosyvoice:]Engine error [411]` |
+
+  网关已按上表在本地校验音色，不匹配会直接返回 400 并列出可用音色，不会再打到上游。
 - 上游返回音频 URL，网关下载后以二进制返回（≤32 MiB，禁止私网地址）。
 - `cosyvoice-*` 按字符计费；`qwen-audio-3.1-tts-flash` / `plus` 按 token 计费。
 

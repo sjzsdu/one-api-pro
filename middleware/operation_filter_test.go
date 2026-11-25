@@ -6,8 +6,10 @@
 package middleware
 
 import (
+	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/modelbus/one-api-pro/channelrouter"
 	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/config"
 	"github.com/modelbus/one-api-pro/common/ctxkey"
@@ -201,5 +203,73 @@ func TestChannelOperation_RealtimeModelGivesActionableSyncError(t *testing.T) {
 	err = channelOperationError(c, &model.Channel{Type: 17}, "qwen3.5-omni-flash-realtime-2025-09-08")
 	if err == nil || !strings.Contains(err.Error(), "model_operation_unsupported") || !strings.Contains(err.Error(), "/v1/realtime") {
 		t.Fatalf("unactionable realtime error: %v", err)
+	}
+}
+
+// TestChannelOperation_TTSVoiceMustMatchModelFamily 覆盖线上事故：
+// qwen-audio-3.1-tts-flash 用 cosyvoice 的音色名时，上游只回一句
+// "[cosyvoice:]Engine error [411]"，无法判断是音色错了。
+// 能力目录声明音色白名单后，网关应在本地拦下并列出可用音色。
+func TestChannelOperation_TTSVoiceMustMatchModelFamily(t *testing.T) {
+	old := model.DB
+	t.Cleanup(func() { model.DB = old })
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	t.Cleanup(func() { sqlDB.Close() })
+	model.InitModelCapabilityCache(db)
+	db.AutoMigrate(&model.ModelCatalog{})
+	model.DB = db
+
+	newCtx := func(voice string) *gin.Context {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("POST", "/v1/audio/speech",
+			strings.NewReader(`{"model":"qwen-audio-3.1-tts-flash","input":"你好","voice":"`+voice+`"}`))
+		c.Request.Header.Set("Content-Type", "application/json")
+		return c
+	}
+
+	err = channelOperationError(newCtx("longanhuan_v3"), &model.Channel{Type: 17}, "qwen-audio-3.1-tts-flash")
+	if err == nil {
+		t.Fatal("cosyvoice voice accepted for a qwen-audio model")
+	}
+	if !strings.Contains(err.Error(), "longanhuan_v3.1") {
+		t.Fatalf("error should list the allowed voices, got: %v", err)
+	}
+	if err := channelOperationError(newCtx("longanhuan_v3.1"), &model.Channel{Type: 17}, "qwen-audio-3.1-tts-flash"); err != nil {
+		t.Fatalf("valid voice rejected: %v", err)
+	}
+}
+
+// TestNoChannelMessage_区分没有渠道与渠道暂时不可用 锁定对外文案：
+// 候选被冷却/并发滤掉时要带原因；确实没有渠道时保持原句不编造原因。
+func TestNoChannelMessage_区分没有渠道与渠道暂时不可用(t *testing.T) {
+	plain := noChannelMessage("default", "qwen-plus", errors.New("no channel"))
+	if !strings.Contains(plain, "无可用渠道") {
+		t.Fatalf("plain message = %q", plain)
+	}
+	if strings.Contains(plain, "暂时") {
+		t.Fatalf("plain message should not claim a temporary condition: %q", plain)
+	}
+
+	dropped := &channelrouter.NoAvailableChannelError{
+		Group: "default",
+		Model: "qwen-plus",
+		Drops: []channelrouter.ChannelDrop{{
+			Filter:   "cooldown",
+			Channels: []*model.Channel{{Id: 5, LastError: "[429] quota exceeded"}},
+		}},
+	}
+	detailed := noChannelMessage("default", "qwen-plus", dropped)
+	if !strings.Contains(detailed, "暂时无可用渠道") {
+		t.Fatalf("detailed message = %q", detailed)
+	}
+	if !strings.Contains(detailed, "冷却中") {
+		t.Fatalf("detailed message should mention the filter reason: %q", detailed)
+	}
+	if !strings.Contains(detailed, "quota exceeded") {
+		t.Fatalf("detailed message should carry the upstream error: %q", detailed)
 	}
 }

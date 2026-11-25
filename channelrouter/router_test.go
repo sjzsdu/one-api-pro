@@ -2,6 +2,8 @@ package channelrouter
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -221,8 +223,8 @@ func TestRouteExcludesFallbackChannels(t *testing.T) {
 	router := NewChannelRouter()
 	candidates := []*model.Channel{
 		makeFallbackChannel(10, model.ChannelStatusEnabled, 100, false, 0), // highest priority, normal
-		makeFallbackChannel(20, model.ChannelStatusEnabled, 100, true, 50),  // highest priority, fallback
-		makeFallbackChannel(30, model.ChannelStatusEnabled, 50, false, 0),   // lower priority, normal
+		makeFallbackChannel(20, model.ChannelStatusEnabled, 100, true, 50), // highest priority, fallback
+		makeFallbackChannel(30, model.ChannelStatusEnabled, 50, false, 0),  // lower priority, normal
 	}
 	for i := 0; i < 50; i++ {
 		ch, err := router.Route(context.Background(), &RouteRequest{
@@ -272,4 +274,44 @@ func TestChannelGetters(t *testing.T) {
 			t.Errorf("FallbackPriority=42, got %d", ch.GetFallbackPriority())
 		}
 	})
+}
+
+// TestRouteReportsWhyCandidatesWereDropped 覆盖线上事故的误导性文案：
+// 上游 429 → 渠道进入冷却 → 候选被滤空 → 对外必须说清「冷却中」而不是「没有渠道」。
+// Covers the misleading "no available channel" wording of the 2026-11-24 incident.
+func TestRouteReportsWhyCandidatesWereDropped(t *testing.T) {
+	router := NewChannelRouter()
+	ch := makeChannel(1, model.ChannelStatusEnabled, 0, 0)
+	ch.LastError = "[429] You have exceeded the weekly usage quota."
+	router.Cooldown.SetCooldown(1, 60, "upstream_429", 429)
+
+	_, err := router.Route(context.Background(),
+		&RouteRequest{Group: "default", Model: "qwen-plus"}, []*model.Channel{ch})
+	var noChannel *NoAvailableChannelError
+	if !errors.As(err, &noChannel) {
+		t.Fatalf("err = %v, want NoAvailableChannelError", err)
+	}
+	reason := noChannel.Reason()
+	if !strings.Contains(reason, "冷却中") {
+		t.Fatalf("reason = %q, want it to mention 冷却中", reason)
+	}
+	if !strings.Contains(reason, "weekly usage quota") {
+		t.Fatalf("reason = %q, want it to carry the upstream last error", reason)
+	}
+}
+
+// TestRouteWithoutCandidatesKeepsPlainReason 确认「分组确实没有渠道」时
+// 不编造原因，对外仍是原来的笼统文案。
+// Keeps the plain reason when the group truly has no channel at all.
+func TestRouteWithoutCandidatesKeepsPlainReason(t *testing.T) {
+	router := NewChannelRouter()
+	_, err := router.Route(context.Background(),
+		&RouteRequest{Group: "default", Model: "qwen-plus"}, nil)
+	var noChannel *NoAvailableChannelError
+	if !errors.As(err, &noChannel) {
+		t.Fatalf("err = %v, want NoAvailableChannelError", err)
+	}
+	if noChannel.Reason() != "" {
+		t.Fatalf("reason = %q, want empty", noChannel.Reason())
+	}
 }
