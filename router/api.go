@@ -269,6 +269,27 @@ func SetApiRouter(router *gin.Engine) {
 			adminDashRoute.GET("/charts", admin.GetCharts)
 			adminDashRoute.GET("/top-users", admin.GetTopUsers)
 		}
+		// 供应商（渠道商）统计与目录：用量归属、渠道概况、免费模型清单。
+		// Provider statistics and catalogue: usage attribution, channel overview, free model list.
+		// 版本: v0.0.28
+		providerRoute := apiRouter.Group("/admin/providers")
+		providerRoute.Use(middleware.AdminAuth())
+		{
+			providerRoute.GET("/", admin.GetProviders)
+			providerRoute.GET("/:id", admin.GetProviderDetail)
+			providerRoute.PUT("/:id/profile", admin.SaveProviderProfile)
+		}
+		// 免费模型清单：独立路由，避免与 /:id 通配冲突。
+		// Free model catalogue: separate group to avoid conflicting with the /:id wildcard.
+		// 版本: v0.0.28
+		freeModelRoute := apiRouter.Group("/admin/free-models")
+		freeModelRoute.Use(middleware.AdminAuth())
+		{
+			freeModelRoute.GET("/", admin.ListFreeModels)
+			freeModelRoute.PUT("/", admin.SaveFreeModel)
+			freeModelRoute.DELETE("/", admin.DeleteFreeModel)
+			freeModelRoute.POST("/detect", admin.DetectFreeModels)
+		}
 		clusterNodeRoute := apiRouter.Group("/cluster_node")
 		clusterNodeRoute.Use(middleware.RootAuth())
 		{
