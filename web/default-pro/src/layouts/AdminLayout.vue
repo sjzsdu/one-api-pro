@@ -64,6 +64,10 @@
             <template #icon><icon-apps /></template>
             {{ $t('menu.channel') }}
           </a-menu-item>
+          <a-menu-item key="/providers" role="menuitem" tabindex="0" :aria-current="route.path.startsWith('/providers') ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/providers')">
+            <template #icon><icon-book /></template>
+            {{ $t('providerPage.menuProvider') }}
+          </a-menu-item>
           <a-menu-item key="/admin/orders" role="menuitem" tabindex="0" :aria-current="route.path === '/admin/orders' ? 'page' : undefined" @keydown="handleMenuKeydown($event, '/admin/orders')">
             <template #icon><icon-storage /></template>
             {{ $t('menu.orders') }}
@@ -176,7 +180,7 @@ import { useI18n } from 'vue-i18n'
 import { Message } from '@arco-design/web-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useStatusStore } from '@/stores/status'
-import { IconDashboard, IconMessage, IconApps, IconCode, IconGift, IconArchive, IconUserGroup, IconCalendar, IconFile, IconSettings, IconExport, IconUser, IconDown, IconStorage, IconBarChart, IconCopy } from '@arco-design/web-vue/es/icon'
+import { IconDashboard, IconMessage, IconApps, IconBook, IconCode, IconGift, IconArchive, IconUserGroup, IconCalendar, IconFile, IconSettings, IconExport, IconUser, IconDown, IconStorage, IconBarChart, IconCopy } from '@arco-design/web-vue/es/icon'
 import LangSwitcher from '@/components/LangSwitcher.vue'
 import api from '@/api'
 import logoPng from '@/assets/logo.png'
