@@ -263,6 +263,9 @@ func migrateDB() error {
 	if err = DB.AutoMigrate(&ChannelCounter{}); err != nil {
 		return err
 	}
+	if err = DB.AutoMigrate(&ProviderProfile{}, &ModelFreeModel{}); err != nil {
+		return err
+	}
 	if err = DB.AutoMigrate(&ModelPrice{}); err != nil {
 		return err
 	}
