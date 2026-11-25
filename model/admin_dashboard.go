@@ -16,6 +16,19 @@ import (
 	"github.com/modelbus/one-api-pro/common/helper"
 )
 
+// countIf 生成跨方言可用的「条件计数」表达式。
+// Builds a portable conditional-count expression.
+//
+// MySQL / SQLite 允许 SUM(status = 1)（把布尔当 0/1 求和），PostgreSQL 没有
+// sum(boolean) 这种函数，直接写会报 "function sum(boolean) does not exist"
+// （SQLSTATE 42883），管理员仪表盘整页 500。SUM(CASE WHEN ... THEN 1 ELSE 0 END)
+// 三种方言都能用，因此统一走这个 helper。
+// 版本: v0.0.28
+// 日期: 2026-11-25
+func countIf(condition string) string {
+	return "COALESCE(SUM(CASE WHEN " + condition + " THEN 1 ELSE 0 END), 0)"
+}
+
 // AdminDashboardUsers 用户层 KPI
 // AdminDashboardUsers holds user-level KPI aggregates.
 // 版本: v0.0.16
@@ -168,12 +181,12 @@ func GetAdminDashboardOverview(rawRange string) (*AdminDashboardOverview, error)
 	if err := DB.Raw(`
 		SELECT
 		  COUNT(*) AS total,
-		  COALESCE(SUM(status = ?), 0) AS enabled,
-		  COALESCE(SUM(status = ?), 0) AS disabled,
-		  COALESCE(SUM(status = ?), 0) AS deleted,
-		  COALESCE(SUM(created_at >= ?), 0) AS new_today,
-		  COALESCE(SUM(created_at >= ?), 0) AS new_7d,
-		  COALESCE(SUM(created_at >= ?), 0) AS new_30d
+		  `+countIf("status = ?")+` AS enabled,
+		  `+countIf("status = ?")+` AS disabled,
+		  `+countIf("status = ?")+` AS deleted,
+		  `+countIf("created_at >= ?")+` AS new_today,
+		  `+countIf("created_at >= ?")+` AS new_7d,
+		  `+countIf("created_at >= ?")+` AS new_30d
 		FROM users
 	`, UserStatusEnabled, UserStatusDisabled, UserStatusDeleted,
 		todayStart, weekStart, monthStart).Scan(&overview.Users).Error; err != nil {
@@ -183,7 +196,7 @@ func GetAdminDashboardOverview(rawRange string) (*AdminDashboardOverview, error)
 	// --- Tokens ---
 	if err := DB.Raw(`
 		SELECT COUNT(*) AS total,
-		       COALESCE(SUM(status = ?), 0) AS enabled
+		       `+countIf("status = ?")+` AS enabled
 		FROM tokens
 	`, TokenStatusEnabled).Scan(&overview.Tokens).Error; err != nil {
 		return nil, fmt.Errorf("aggregate tokens: %w", err)
@@ -192,7 +205,7 @@ func GetAdminDashboardOverview(rawRange string) (*AdminDashboardOverview, error)
 	// --- Channels ---
 	if err := DB.Raw(`
 		SELECT COUNT(*) AS total,
-		       COALESCE(SUM(status = ?), 0) AS enabled
+		       `+countIf("status = ?")+` AS enabled
 		FROM channels
 	`, ChannelStatusEnabled).Scan(&overview.Channels).Error; err != nil {
 		return nil, fmt.Errorf("aggregate channels: %w", err)
@@ -201,7 +214,7 @@ func GetAdminDashboardOverview(rawRange string) (*AdminDashboardOverview, error)
 	// --- Plans ---
 	if err := DB.Raw(`
 		SELECT COUNT(*) AS total,
-		       COALESCE(SUM(status = ?), 0) AS enabled
+		       `+countIf("status = ?")+` AS enabled
 		FROM plans
 	`, PlanStatusEnabled).Scan(&overview.Plans).Error; err != nil {
 		return nil, fmt.Errorf("aggregate plans: %w", err)
@@ -210,8 +223,8 @@ func GetAdminDashboardOverview(rawRange string) (*AdminDashboardOverview, error)
 	// --- Redemptions ---
 	if err := DB.Raw(`
 		SELECT COUNT(*) AS total,
-		       COALESCE(SUM(status = ?), 0) AS used,
-		       COALESCE(SUM(status = ?), 0) AS unused
+		       `+countIf("status = ?")+` AS used,
+		       `+countIf("status = ?")+` AS unused
 		FROM redemptions
 	`, RedemptionCodeStatusUsed, RedemptionCodeStatusEnabled).Scan(&overview.Redemptions).Error; err != nil {
 		return nil, fmt.Errorf("aggregate redemptions: %w", err)
@@ -220,8 +233,8 @@ func GetAdminDashboardOverview(rawRange string) (*AdminDashboardOverview, error)
 	// --- Subscriptions (user_plans) ---
 	if err := DB.Raw(`
 		SELECT COUNT(*) AS total,
-		       COALESCE(SUM(status = ?), 0) AS active,
-		       COALESCE(SUM(status = ?), 0) AS expired
+		       `+countIf("status = ?")+` AS active,
+		       `+countIf("status = ?")+` AS expired
 		FROM user_plans
 	`, UserPlanStatusActive, UserPlanStatusExpired).Scan(&overview.Subscriptions).Error; err != nil {
 		return nil, fmt.Errorf("aggregate subscriptions: %w", err)

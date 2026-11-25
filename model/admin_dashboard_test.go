@@ -13,10 +13,12 @@
 package model
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/modelbus/one-api-pro/common"
@@ -548,5 +550,48 @@ func TestSearchAdminLogsByDayAndModel(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("gpt-4o merged row (quota=3000) not found: %+v", rows)
+	}
+}
+
+// TestCountIfProducesPortableConditionalCount 锁定条件计数表达式的跨方言形状。
+// Locks the portable shape of the conditional-count expression.
+//
+// 背景：PostgreSQL 没有 sum(boolean)，写 SUM(status = 1) 会报
+// "function sum(boolean) does not exist"（SQLSTATE 42883），
+// 管理员仪表盘整页 500；MySQL / SQLite 才允许布尔求和。
+// 版本: v0.0.28
+// 日期: 2026-11-25
+func TestCountIfProducesPortableConditionalCount(t *testing.T) {
+	got := countIf("status = ?")
+	want := "COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0)"
+	if got != want {
+		t.Fatalf("countIf() = %q, want %q", got, want)
+	}
+}
+
+// TestCountIfRendersOnPostgres 确认条件计数在 PostgreSQL 方言下渲染为合法 SQL。
+// Confirms the conditional count renders as valid SQL under PostgreSQL.
+//
+// 渲染结果里必须保留 CASE WHEN（PG 可解析），且不得出现 SUM(<布尔>) 形态。
+// 版本: v0.0.28
+// 日期: 2026-11-25
+func TestCountIfRendersOnPostgres(t *testing.T) {
+	pg, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "postgres://dummy:dummy@127.0.0.1:5432/dummy",
+	}), &gorm.Config{DisableAutomaticPing: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("open dry-run postgres dialector: %v", err)
+	}
+
+	var out struct {
+		Enabled int64 `gorm:"column:enabled"`
+	}
+	sql := pg.Raw("SELECT "+countIf("status = ?")+" AS enabled FROM users", UserStatusEnabled).
+		Scan(&out).Statement.SQL.String()
+	if !strings.Contains(sql, "CASE WHEN") {
+		t.Fatalf("postgres SQL should keep CASE WHEN, got: %s", sql)
+	}
+	if strings.Contains(sql, "SUM(status =") {
+		t.Fatalf("postgres SQL must not sum a boolean expression, got: %s", sql)
 	}
 }
