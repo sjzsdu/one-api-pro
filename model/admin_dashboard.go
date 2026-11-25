@@ -12,7 +12,6 @@ package model
 import (
 	"fmt"
 
-	"github.com/modelbus/one-api-pro/common"
 	"github.com/modelbus/one-api-pro/common/helper"
 )
 
@@ -457,15 +456,7 @@ func ParseAdminChartsRange(raw string) AdminChartsRange {
 // 版本: v0.0.17
 // 日期: 2026-09-11
 func SearchAdminLogsByDayAndModel(start, end int64) ([]*LogStatistic, error) {
-	groupSelect := "DATE_FORMAT(FROM_UNIXTIME(created_at), '%Y-%m-%d') as day"
-
-	if common.UsingPostgreSQL {
-		groupSelect = "TO_CHAR(date_trunc('day', to_timestamp(created_at)), 'YYYY-MM-DD') as day"
-	}
-
-	if common.UsingSQLite {
-		groupSelect = "strftime('%Y-%m-%d', datetime(created_at, 'unixepoch')) as day"
-	}
+	groupSelect := logDayExpression() + " as day"
 
 	var out []*LogStatistic
 	err := LOG_DB.Raw(`

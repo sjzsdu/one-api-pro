@@ -324,16 +324,25 @@ type LogStatistic struct {
 	CompletionTokens int    `gorm:"column:completion_tokens"`
 }
 
-func SearchLogsByDayAndModel(userId, start, end int) (LogStatistics []*LogStatistic, err error) {
-	groupSelect := "DATE_FORMAT(FROM_UNIXTIME(created_at), '%Y-%m-%d') as day"
-
+// logDayExpression 返回按天分组的方言表达式（不含 "as day" 别名）。
+// Returns the dialect-specific day expression used for grouping.
+//
+// MySQL 用 DATE_FORMAT，PostgreSQL 用 TO_CHAR，SQLite 用 strftime；
+// 三者都返回 'YYYY-MM-DD' 文本，避免方言差异导致分组失败。
+// 版本: v0.0.28
+// 日期: 2026-11-25
+func logDayExpression() string {
 	if common.UsingPostgreSQL {
-		groupSelect = "TO_CHAR(date_trunc('day', to_timestamp(created_at)), 'YYYY-MM-DD') as day"
+		return "TO_CHAR(date_trunc('day', to_timestamp(created_at)), 'YYYY-MM-DD')"
 	}
-
 	if common.UsingSQLite {
-		groupSelect = "strftime('%Y-%m-%d', datetime(created_at, 'unixepoch')) as day"
+		return "strftime('%Y-%m-%d', datetime(created_at, 'unixepoch'))"
 	}
+	return "DATE_FORMAT(FROM_UNIXTIME(created_at), '%Y-%m-%d')"
+}
+
+func SearchLogsByDayAndModel(userId, start, end int) (LogStatistics []*LogStatistic, err error) {
+	groupSelect := logDayExpression() + " as day"
 
 	err = LOG_DB.Raw(`
 		SELECT `+groupSelect+`,
